@@ -3,41 +3,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>콘텐츠 현황 관리</title>
+    <title>콘텐츠 현황 관리 (Google Sheet)</title>
     
-    <!-- 1. 환경 변수 폴리필 -->
-    <script>
-        window.process = { env: { NODE_ENV: 'production' } };
-    </script>
-
-    <!-- 2. Tailwind CSS -->
+    <script>window.process = { env: { NODE_ENV: 'production' } };</script>
     <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- 3. React & ReactDOM -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" crossorigin="anonymous"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" crossorigin="anonymous"></script>
-    
-    <!-- 4. Prop Types -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prop-types/15.8.1/prop-types.min.js" crossorigin="anonymous"></script>
-    
-    <!-- 5. Recharts -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.12.7/Recharts.min.js" crossorigin="anonymous"></script>
-    
-    <!-- 6. Babel -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
 
     <style>
-        .icon {
-            display: inline-block;
-            vertical-align: middle;
-        }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        .animate-fadeIn {
-            animation: fadeIn 0.3s ease-out forwards;
-        }
+        .icon { display: inline-block; vertical-align: middle; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fadeIn { animation: fadeIn 0.3s ease-out forwards; }
+        .loader { border: 2px solid #f3f3f3; border-top: 2px solid #3b82f6; border-radius: 50%; width: 14px; height: 14px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        /* 스크롤바 커스텀 */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-900 font-sans">
@@ -45,12 +32,11 @@
 
     <script type="text/babel">
         const { useState, useMemo, useEffect, useCallback } = React;
-        
-        // Recharts 라이브러리 로드 확인 및 가져오기
         const RechartsObj = window.Recharts;
-        const { 
-            BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList 
-        } = RechartsObj || {};
+        const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList } = RechartsObj || {};
+
+        // 사용자가 제공한 Google Apps Script URL (기본값)
+        const DEFAULT_SHEET_URL = "https://script.google.com/macros/s/AKfycbzjD7U46nMHIoKjD4rm5RuuNIkDUdMlRSdAR-pS_eHSoreqQ49qf079jm2GP5GlpoIGfw/exec";
 
         // --- 아이콘 컴포넌트 ---
         const Icon = ({ name, size = 20, className = "" }) => {
@@ -69,624 +55,338 @@
                 Download: <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></>,
                 Edit: <><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></>,
                 Save: <><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></>,
-                Search: <><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></>
+                Search: <><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></>,
+                Settings: <><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></>,
+                Sheet: <><path d="M3 3h18v18H3z"/><path d="M21 9H3"/><path d="M21 15H3"/><path d="M12 3v18"/></>,
+                Refresh: <><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></>,
+                Check: <><polyline points="20 6 9 17 4 12"/></>,
+                LinkOff: <><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></>
             };
-
-            return (
-                <svg 
-                    xmlns="http://www.w3.org/2000/svg" 
-                    width={size} 
-                    height={size} 
-                    viewBox="0 0 24 24" 
-                    fill="none" 
-                    stroke="currentColor" 
-                    strokeWidth="2" 
-                    strokeLinecap="round" 
-                    strokeLinejoin="round" 
-                    className={`icon ${className}`}
-                >
-                    {icons[name] || null}
-                </svg>
-            );
+            return <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`icon ${className}`}>{icons[name] || null}</svg>;
         };
 
-        // --- CSV 파서 ---
-        const parseCSV = (text) => {
-            const rows = [];
-            let currentRow = [];
-            let currentCell = '';
-            let inQuotes = false;
+        const parseCSV = (text) => { const rows = []; let currentRow = []; let currentCell = ''; let inQuotes = false; if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1); for (let i = 0; i < text.length; i++) { const char = text[i]; const nextChar = text[i + 1]; if (inQuotes) { if (char === '"' && nextChar === '"') { currentCell += '"'; i++; } else if (char === '"') { inQuotes = false; } else { currentCell += char; } } else { if (char === '"') { inQuotes = true; } else if (char === ',') { currentRow.push(currentCell.trim()); currentCell = ''; } else if (char === '\n' || char === '\r') { if (char === '\r' && nextChar === '\n') i++; currentRow.push(currentCell.trim()); if (currentRow.length > 0 && currentRow.some(c => c !== '')) rows.push(currentRow); currentRow = []; currentCell = ''; } else { currentCell += char; } } } if (currentCell || currentRow.length > 0) { currentRow.push(currentCell.trim()); if (currentRow.length > 0 && currentRow.some(c => c !== '')) rows.push(currentRow); } return rows; };
 
-            if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
-
-            for (let i = 0; i < text.length; i++) {
-                const char = text[i];
-                const nextChar = text[i + 1];
-
-                if (inQuotes) {
-                    if (char === '"' && nextChar === '"') {
-                        currentCell += '"';
-                        i++;
-                    } else if (char === '"') {
-                        inQuotes = false;
-                    } else {
-                        currentCell += char;
-                    }
-                } else {
-                    if (char === '"') {
-                        inQuotes = true;
-                    } else if (char === ',') {
-                        currentRow.push(currentCell.trim());
-                        currentCell = '';
-                    } else if (char === '\n' || char === '\r') {
-                        if (char === '\r' && nextChar === '\n') i++;
-                        currentRow.push(currentCell.trim());
-                        if (currentRow.length > 0 && currentRow.some(c => c !== '')) {
-                            rows.push(currentRow);
-                        }
-                        currentRow = [];
-                        currentCell = '';
-                    } else {
-                        currentCell += char;
-                    }
-                }
-            }
-            if (currentCell || currentRow.length > 0) {
-                currentRow.push(currentCell.trim());
-                if (currentRow.length > 0 && currentRow.some(c => c !== '')) {
-                    rows.push(currentRow);
-                }
-            }
-            return rows;
-        };
-
-        // --- 번호 재정렬 함수 ---
-        // 특정 회사의 데이터만 추출하여, '판매중지'가 아닌 항목들에 대해 1부터 번호를 재부여하고
-        // 판매중지인 항목은 번호를 비운 뒤 전체 데이터에 반영
         const renumberCompanyData = (allData, companyName) => {
-            // 1. 다른 회사 데이터 분리
             const otherData = allData.filter(d => d.company !== companyName);
-            // 2. 현재 회사 데이터 가져오기
             const targetData = allData.filter(d => d.company === companyName);
-            
-            // 3. 현재 회사 데이터 중 '삭제됨'이 아닌 것과 '삭제됨'인 것 분리
-            // (정렬 기준이 필요하다면 여기서 sort 추가 가능. 현재는 입력 순서 유지)
             let counter = 1;
             const updatedTargetData = targetData.map(item => {
-                if (item.removed) {
-                    // 판매 중지(삭제됨) 상태라면 번호 제거
-                    return { ...item, no: '' };
-                } else {
-                    // 정상 판매 중이면 번호 부여 후 카운터 증가
-                    return { ...item, no: String(counter++) };
-                }
+                if (item.removed) return { ...item, no: '' };
+                else return { ...item, no: String(counter++) };
             });
-
-            // 4. 합쳐서 반환
             return [...otherData, ...updatedTargetData];
         };
 
-        // --- 수정 모달 ---
-        const EditModal = ({ isOpen, onClose, item, onSave }) => {
-            const [formData, setFormData] = useState(item || {});
-
-            useEffect(() => {
-                setFormData(item || {});
-            }, [item]);
-
-            if (!isOpen || !item) return null;
-
-            const handleChange = (e) => {
-                const { name, value } = e.target;
-                setFormData(prev => ({ ...prev, [name]: value }));
-            };
-
-            const handleSubmit = (e) => {
-                e.preventDefault();
-                onSave(formData);
-                onClose();
-            };
-
+        // --- 구글 시트 모달 ---
+        const GoogleSheetModal = ({ isOpen, onClose, sheetUrl, onSync }) => {
+            const [url, setUrl] = useState(sheetUrl || '');
+            useEffect(() => { setUrl(sheetUrl || '') }, [sheetUrl]);
+            if (!isOpen) return null;
             return (
                 <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-                    {/* 모달 컨테이너에 애니메이션 적용 */}
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-md animate-fadeIn relative p-6 space-y-4">
+                        <div className="flex justify-between items-center border-b pb-3">
+                            <h3 className="font-bold text-lg flex items-center gap-2"><Icon name="Sheet" className="text-green-600"/> 구글 시트 연동 설정</h3>
+                            <button onClick={onClose}><Icon name="X"/></button>
+                        </div>
+                        <div className="text-sm text-slate-600 space-y-2">
+                            <p>1. 구글 시트의 <strong>[Apps Script]</strong> 코드를 저장하세요.</p>
+                            <p>2. <strong>[배포] &gt; [웹 앱]</strong> 권한을 반드시 <span className="text-red-600 font-bold">'모든 사용자(Everyone)'</span>로 설정해야 합니다.</p>
+                            <p>3. 생성된 웹 앱 URL을 아래에 입력하세요.</p>
+                        </div>
+                        <input type="text" className="w-full p-2 border rounded text-sm bg-slate-50" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://script.google.com/..." />
+                        <div className="flex justify-end gap-2 pt-2">
+                            <button onClick={() => onSync(url)} className="px-4 py-2 bg-green-600 text-white rounded text-sm font-bold hover:bg-green-700 flex items-center gap-2"><Icon name="Refresh" size={16}/> 연동 및 동기화</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const EditModal = ({ isOpen, onClose, item, onSave }) => {
+            const [formData, setFormData] = useState(item || {});
+            useEffect(() => { setFormData(item || {}); }, [item]);
+            if (!isOpen || !item) return null;
+            const handleChange = (e) => { const { name, value } = e.target; setFormData(prev => ({ ...prev, [name]: value })); };
+            const handleSubmit = (e) => { e.preventDefault(); onSave(formData); onClose(); };
+            return (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
                     <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-fadeIn relative">
                         <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                            <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                                <Icon name="Edit" size={18} className="text-indigo-600" /> 과정 정보 수정
-                            </h3>
-                            <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
-                                <Icon name="X" size={24} />
-                            </button>
+                            <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Icon name="Edit" size={18} className="text-indigo-600" /> 과정 정보 수정</h3>
+                            <button onClick={onClose}><Icon name="X" size={24} /></button>
                         </div>
-                        
                         <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
                             <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 mb-1">번호</label>
-                                    <input 
-                                        type="text" 
-                                        name="no" 
-                                        value={formData.no || ''} 
-                                        readOnly 
-                                        className="w-full p-2 border border-slate-200 bg-slate-100 text-slate-500 rounded text-sm cursor-not-allowed" 
-                                        title="번호는 자동 관리됩니다"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 mb-1">오픈일 (YYYY.MM)</label>
-                                    <input type="text" name="openDate" value={formData.openDate || ''} onChange={handleChange} placeholder="입력하지 않으면 공란" className="w-full p-2 border border-slate-300 rounded text-sm" />
-                                </div>
+                                <div><label className="block text-xs font-bold text-slate-500 mb-1">번호</label><input type="text" name="no" value={formData.no || ''} readOnly className="w-full p-2 border border-slate-200 bg-slate-100 text-slate-500 rounded text-sm cursor-not-allowed"/></div>
+                                <div><label className="block text-xs font-bold text-slate-500 mb-1">오픈일</label><input type="text" name="openDate" value={formData.openDate || ''} onChange={handleChange} placeholder="공란일 경우 비워둠" className="w-full p-2 border border-slate-300 rounded text-sm"/></div>
                             </div>
-                            <div>
-                                <label className="block text-xs font-bold text-slate-500 mb-1">과정명</label>
-                                <input type="text" name="title" value={formData.title || ''} onChange={handleChange} className="w-full p-2 border border-slate-300 rounded text-sm font-medium" />
-                            </div>
+                            <div><label className="block text-xs font-bold text-slate-500 mb-1">과정명</label><input type="text" name="title" value={formData.title || ''} onChange={handleChange} className="w-full p-2 border border-slate-300 rounded text-sm font-medium"/></div>
                             <div className="grid grid-cols-3 gap-4">
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 mb-1">학점</label>
-                                    <input type="text" name="credits" value={formData.credits || ''} onChange={handleChange} className="w-full p-2 border border-slate-300 rounded text-sm" />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 mb-1">시간</label>
-                                    <input type="text" name="hours" value={formData.hours || ''} onChange={handleChange} className="w-full p-2 border border-slate-300 rounded text-sm" />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 mb-1">분야</label>
-                                    <input type="text" name="category" value={formData.category || ''} onChange={handleChange} className="w-full p-2 border border-slate-300 rounded text-sm" />
-                                </div>
+                                <div><label className="block text-xs font-bold text-slate-500 mb-1">학점</label><input type="text" name="credits" value={formData.credits || ''} onChange={handleChange} className="w-full p-2 border border-slate-300 rounded text-sm"/></div>
+                                <div><label className="block text-xs font-bold text-slate-500 mb-1">시간</label><input type="text" name="hours" value={formData.hours || ''} onChange={handleChange} className="w-full p-2 border border-slate-300 rounded text-sm"/></div>
+                                <div><label className="block text-xs font-bold text-slate-500 mb-1">분야</label><input type="text" name="category" value={formData.category || ''} onChange={handleChange} className="w-full p-2 border border-slate-300 rounded text-sm"/></div>
                             </div>
-                            <div>
-                                <label className="block text-xs font-bold text-slate-500 mb-1">특이사항</label>
-                                <textarea name="remarks" value={formData.remarks || ''} onChange={handleChange} className="w-full p-2 border border-slate-300 rounded text-sm h-20 resize-none"></textarea>
-                            </div>
-                            <div className="bg-slate-50 p-3 rounded border border-slate-200">
-                                <div className="flex items-center gap-2">
-                                    <input 
-                                        type="checkbox" 
-                                        id="removed" 
-                                        name="removed" 
-                                        checked={!!formData.removed} 
-                                        onChange={(e) => setFormData(prev => ({ ...prev, removed: e.target.checked ? '삭제됨' : '' }))} 
-                                        className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500" 
-                                    />
-                                    <label htmlFor="removed" className="text-sm font-bold text-slate-700 cursor-pointer">판매 중지(삭제됨) 처리</label>
-                                </div>
-                                <p className="text-xs text-slate-500 mt-1 ml-6">체크 시 목록 번호에서 제외되고 '삭제됨'으로 표시됩니다.</p>
-                            </div>
+                            <div><label className="block text-xs font-bold text-slate-500 mb-1">특이사항</label><textarea name="remarks" value={formData.remarks || ''} onChange={handleChange} className="w-full p-2 border border-slate-300 rounded text-sm h-20 resize-none"></textarea></div>
+                            <div className="bg-slate-50 p-3 rounded border border-slate-200"><div className="flex items-center gap-2"><input type="checkbox" id="removed" name="removed" checked={!!formData.removed} onChange={(e) => setFormData(prev => ({ ...prev, removed: e.target.checked ? '삭제됨' : '' }))} className="w-4 h-4 rounded text-indigo-600"/><label htmlFor="removed" className="text-sm font-bold text-slate-700 cursor-pointer">판매 중지(삭제됨) 처리</label></div><p className="text-xs text-slate-500 mt-1 ml-6">체크 시 번호에서 제외되고 '삭제됨'으로 표시됩니다.</p></div>
                         </form>
-
-                        <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-2">
-                            <button onClick={onClose} className="px-4 py-2 text-slate-500 hover:bg-slate-200 rounded-lg text-sm font-bold">취소</button>
-                            <button onClick={handleSubmit} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-bold shadow-md">저장하기</button>
-                        </div>
+                        <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-2"><button onClick={onClose} className="px-4 py-2 text-slate-500 hover:bg-slate-200 rounded-lg text-sm font-bold">취소</button><button onClick={handleSubmit} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-bold shadow-md">저장하기</button></div>
                     </div>
                 </div>
             );
         };
 
-        // --- 메인 대시보드 ---
         const MainDashboard = ({ data, companies, onCompanyClick }) => {
             const currentMonth = new Date().toISOString().slice(0, 7).replace('-', '.');
-
-            const stats = useMemo(() => {
-                return companies.map(company => {
-                    const companyData = data.filter(d => d.company === company);
-                    const newCount = companyData.filter(d => (d.openDate || '').includes(currentMonth)).length;
-                    return {
-                        name: company,
-                        total: companyData.length,
-                        new: newCount
-                    };
-                });
-            }, [data, companies, currentMonth]);
-
+            const stats = useMemo(() => companies.map(c => ({ name: c, total: data.filter(d => d.company === c).length, new: data.filter(d => d.company === c && (d.openDate||'').includes(currentMonth)).length })), [data, companies, currentMonth]);
             const totalCourses = stats.reduce((acc, curr) => acc + curr.total, 0);
             const totalNew = stats.reduce((acc, curr) => acc + curr.new, 0);
-
-            if (!BarChart) {
-                return (
-                    <div className="p-10 text-center">
-                        <div className="text-red-500 font-bold mb-2">차트 라이브러리를 불러오지 못했습니다.</div>
-                        <div className="text-sm text-slate-500">인터넷 연결을 확인하거나 페이지를 새로고침해주세요.</div>
-                    </div>
-                );
-            }
-
+            if (!BarChart) return <div className="p-10 text-center text-slate-400">차트 라이브러리 로딩 중...</div>;
             return (
                 <div className="space-y-6 animate-fadeIn">
-                    <div className="flex flex-col gap-2">
-                        <h2 className="text-2xl font-bold text-slate-800">전체 현황 대시보드</h2>
-                        <p className="text-slate-500 text-sm">7개 경쟁사의 콘텐츠 현황을 한눈에 확인하세요.</p>
-                    </div>
-
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-                            <div>
-                                <p className="text-sm font-medium text-slate-500">총 관리 업체</p>
-                                <p className="text-3xl font-bold text-slate-800 mt-1">{companies.length}개</p>
-                            </div>
-                            <div className="p-3 bg-blue-50 text-blue-600 rounded-full">
-                                <Icon name="Building2" size={24} />
-                            </div>
-                        </div>
-                        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-                            <div>
-                                <p className="text-sm font-medium text-slate-500">전체 콘텐츠 수</p>
-                                <p className="text-3xl font-bold text-slate-800 mt-1">{totalCourses}개</p>
-                            </div>
-                            <div className="p-3 bg-emerald-50 text-emerald-600 rounded-full">
-                                <Icon name="FileText" size={24} />
-                            </div>
-                        </div>
-                        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-                            <div>
-                                <p className="text-sm font-medium text-slate-500">이번 달 신규 ({currentMonth})</p>
-                                <p className="text-3xl font-bold text-indigo-600 mt-1">{totalNew}개</p>
-                            </div>
-                            <div className="p-3 bg-indigo-50 text-indigo-600 rounded-full">
-                                <Icon name="Plus" size={24} />
-                            </div>
-                        </div>
+                        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between"><div><p className="text-sm font-medium text-slate-500">총 관리 업체</p><p className="text-3xl font-bold text-slate-800 mt-1">{companies.length}개</p></div><div className="p-3 bg-blue-50 text-blue-600 rounded-full"><Icon name="Building2" size={24}/></div></div>
+                        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between"><div><p className="text-sm font-medium text-slate-500">전체 콘텐츠 수</p><p className="text-3xl font-bold text-slate-800 mt-1">{totalCourses}개</p></div><div className="p-3 bg-emerald-50 text-emerald-600 rounded-full"><Icon name="FileText" size={24}/></div></div>
+                        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between"><div><p className="text-sm font-medium text-slate-500">이번 달 신규 ({currentMonth})</p><p className="text-3xl font-bold text-indigo-600 mt-1">{totalNew}개</p></div><div className="p-3 bg-indigo-50 text-indigo-600 rounded-full"><Icon name="Plus" size={24}/></div></div>
                     </div>
-
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                            <h3 className="text-lg font-bold text-slate-800 mb-6">업체별 콘텐츠 보유 현황</h3>
-                            <div className="h-80">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart data={stats} layout="vertical" margin={{ top: 5, right: 30, left: 40, bottom: 5 }}>
-                                        <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
-                                        <XAxis type="number" hide />
-                                        <YAxis dataKey="name" type="category" width={80} tick={{ fontSize: 12 }} />
-                                        <Tooltip cursor={{fill: '#F8FAFC'}} contentStyle={{borderRadius: '8px', border:'none', boxShadow:'0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
-                                        <Bar dataKey="total" name="총 과정 수" fill="#3B82F6" radius={[0, 4, 4, 0]} barSize={20} onClick={(data) => onCompanyClick(data.name)}>
-                                            {stats.map((entry, index) => (
-                                                <Cell key={`cell-${index}`} fill={['#3B82F6', '#10B981', '#6366F1', '#F59E0B', '#EC4899', '#8B5CF6', '#14B8A6'][index % 7]} />
-                                            ))}
-                                            {/* 항상 숫자 표시 (오른쪽) */}
-                                            <LabelList dataKey="total" position="right" style={{ fontSize: '12px', fill: '#64748B', fontWeight: 'bold' }} />
-                                        </Bar>
-                                    </BarChart>
-                                </ResponsiveContainer>
-                            </div>
-                        </div>
-
-                        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                            <h3 className="text-lg font-bold text-slate-800 mb-6">이번 달 신규 과정 ({currentMonth})</h3>
-                            <div className="h-80">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart data={stats} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                        <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} />
-                                        <YAxis allowDecimals={false} />
-                                        <Tooltip cursor={{fill: '#F8FAFC'}} contentStyle={{borderRadius: '8px', border:'none', boxShadow:'0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
-                                        <Bar dataKey="new" name="신규 과정" fill="#6366F1" radius={[4, 4, 0, 0]} barSize={30} onClick={(data) => onCompanyClick(data.name)}>
-                                            {/* 항상 숫자 표시 (위쪽) */}
-                                            <LabelList dataKey="new" position="top" style={{ fontSize: '12px', fill: '#6366F1', fontWeight: 'bold' }} />
-                                        </Bar>
-                                    </BarChart>
-                                </ResponsiveContainer>
-                            </div>
-                        </div>
+                        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm"><h3 className="text-lg font-bold text-slate-800 mb-6">업체별 콘텐츠 보유 현황</h3><div className="h-80"><ResponsiveContainer width="100%" height="100%"><BarChart data={stats} layout="vertical" margin={{ top: 5, right: 30, left: 40, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} /><XAxis type="number" hide /><YAxis dataKey="name" type="category" width={80} tick={{ fontSize: 12 }} /><Tooltip cursor={{fill: '#F8FAFC'}} contentStyle={{borderRadius: '8px', border:'none', boxShadow:'0 4px 6px -1px rgb(0 0 0 / 0.1)'}} /><Bar dataKey="total" name="총 과정 수" fill="#3B82F6" radius={[0, 4, 4, 0]} barSize={20} onClick={(data) => onCompanyClick(data.name)}>{stats.map((entry, index) => (<Cell key={`cell-${index}`} fill={['#3B82F6', '#10B981', '#6366F1', '#F59E0B', '#EC4899', '#8B5CF6', '#14B8A6'][index % 7]} />))}<LabelList dataKey="total" position="right" style={{ fontSize: '12px', fill: '#64748B', fontWeight: 'bold' }} /></Bar></BarChart></ResponsiveContainer></div></div>
+                        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm"><h3 className="text-lg font-bold text-slate-800 mb-6">이번 달 신규 과정 ({currentMonth})</h3><div className="h-80"><ResponsiveContainer width="100%" height="100%"><BarChart data={stats} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} /><YAxis allowDecimals={false} /><Tooltip cursor={{fill: '#F8FAFC'}} contentStyle={{borderRadius: '8px', border:'none', boxShadow:'0 4px 6px -1px rgb(0 0 0 / 0.1)'}} /><Bar dataKey="new" name="신규 과정" fill="#6366F1" radius={[4, 4, 0, 0]} barSize={30} onClick={(data) => onCompanyClick(data.name)}><LabelList dataKey="new" position="top" style={{ fontSize: '12px', fill: '#6366F1', fontWeight: 'bold' }} /></Bar></BarChart></ResponsiveContainer></div></div>
                     </div>
                 </div>
             );
         };
 
-        // --- 회사 상세 페이지 ---
-        const CompanyDetail = ({ 
-            company, data, setData, 
-            onAddRow, onDeleteRow, onUpdateRow,
-            onFileUpload, onWebImport 
-        }) => {
-            const [activeTab, setActiveTab] = useState('list'); 
+        const SearchResults = ({ data, searchTerm, companies, onDeleteRow, onUpdateRow }) => {
             const [editingItem, setEditingItem] = useState(null);
+            const results = useMemo(() => {
+                if(!searchTerm) return {};
+                const grouped = {};
+                companies.forEach(c => {
+                    const items = data.filter(d => d.company === c && d.title.toLowerCase().includes(searchTerm.toLowerCase()));
+                    if(items.length) grouped[c] = items;
+                });
+                return grouped;
+            }, [data, searchTerm]);
+            const hasResults = Object.keys(results).length > 0;
 
+            return (
+                <div className="space-y-8 animate-fadeIn pb-10">
+                    <div className="bg-white p-4 rounded-xl border shadow-sm">
+                        <h2 className="text-xl font-bold flex items-center gap-2"><Icon name="Search" className="text-indigo-600"/> "{searchTerm}" 검색 결과</h2>
+                    </div>
+                    {!hasResults ? <div className="text-center py-20 bg-white rounded-xl border border-dashed text-slate-500">결과가 없습니다.</div> : 
+                        Object.keys(results).map(company => (
+                            <div key={company} className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                                <div className="p-4 bg-slate-50 border-b font-bold">{company} ({results[company].length})</div>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm text-left text-slate-600">
+                                        <thead className="bg-slate-100 text-xs"><tr><th className="px-4 py-3">번호</th><th className="px-4 py-3">과정명</th><th className="px-4 py-3">상태</th><th className="px-4 py-3 text-center">관리</th></tr></thead>
+                                        <tbody className="divide-y">{results[company].map(row => (
+                                            <tr key={row.id} className="hover:bg-slate-50"><td className="px-4 py-3">{row.no}</td><td className="px-4 py-3">{row.title}</td><td className="px-4 py-3">{row.removed ? '삭제됨':'운영중'}</td>
+                                            <td className="px-4 py-3 text-center flex justify-center gap-1"><button onClick={() => setEditingItem(row)} className="text-slate-400 hover:text-indigo-600 p-1"><Icon name="Edit" size={16}/></button><button onClick={() => onDeleteRow(row.id)} className="text-slate-400 hover:text-red-600 p-1"><Icon name="Trash2" size={16}/></button></td></tr>
+                                        ))}</tbody></table>
+                                </div>
+                            </div>
+                        ))
+                    }
+                    <EditModal key={editingItem?.id} isOpen={!!editingItem} item={editingItem} onClose={() => setEditingItem(null)} onSave={onUpdateRow} />
+                </div>
+            );
+        };
+
+        const CompanyDetail = ({ company, data, onDeleteRow, onUpdateRow, onFileUpload, onWebImport, onAddRow }) => {
+            const [activeTab, setActiveTab] = useState('list');
+            const [editingItem, setEditingItem] = useState(null);
+            
             const handleDownloadData = () => {
                 const companyData = data.filter(d => d.company === company);
                 const headers = ['번호', '과정명', '학점', '시간', '분', '연수분야', '자격증', '신규오픈날짜', '사라진 과정', '특이사항'];
                 const csvRows = companyData.map(row => {
-                    const safe = (val) => {
-                        const str = String(val || '');
-                        return str.includes(',') || str.includes('\n') ? `"${str}"` : str;
-                    };
-                    return [
-                        safe(row.no), safe(row.title), safe(row.credits), safe(row.hours),
-                        safe(row.minutes || (row.hours * 60)), safe(row.category), safe(row.certification),
-                        safe(row.openDate), safe(row.removed), safe(row.remarks)
-                    ].join(',');
+                    const safe = (val) => { const str = String(val || ''); return str.includes(',') || str.includes('\n') ? `"${str}"` : str; };
+                    return [safe(row.no), safe(row.title), safe(row.credits), safe(row.hours), safe(row.minutes), safe(row.category), safe(row.certification), safe(row.openDate), safe(row.removed), safe(row.remarks)].join(',');
                 });
                 const csvContent = '\uFEFF' + headers.join(',') + '\n' + csvRows.join('\n');
-                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
                 const link = document.createElement('a');
-                const url = URL.createObjectURL(blob);
-                link.setAttribute('href', url);
-                link.setAttribute('download', `${company}_데이터_현황_${new Date().toISOString().slice(0,10)}.csv`);
-                link.style.visibility = 'hidden';
-                document.body.appendChild(link);
+                link.href = URL.createObjectURL(new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }));
+                link.download = `${company}_데이터.csv`;
                 link.click();
-                document.body.removeChild(link);
             };
 
-            const chartData = useMemo(() => {
-                const filtered = data.filter(d => d.company === company);
-                const stats = {};
-                filtered.forEach(item => {
-                    let dateKey = item.openDate || '날짜 미상';
-                    if (dateKey.includes('이전')) dateKey = '과거';
-                    else {
-                        const match = dateKey.match(/(\d{4})[\.\-](\d{2})/);
-                        if (match) dateKey = `${match[1]}.${match[2]}`;
-                        else if (dateKey.length >= 4 && !isNaN(dateKey)) dateKey = dateKey.substring(0, 4);
-                    }
-                    if (!stats[dateKey]) stats[dateKey] = 0;
-                    stats[dateKey] += 1;
-                });
-                return Object.keys(stats).sort().map(key => ({ name: key, count: stats[key] }));
-            }, [data, company]);
-
             const companyData = data.filter(d => d.company === company);
-            const currentMonth = new Date().toISOString().slice(0, 7).replace('-', '.');
-            const newCount = companyData.filter(d => (d.openDate || '').includes(currentMonth)).length;
+            const chartData = useMemo(() => {
+                const stats = {};
+                companyData.forEach(item => {
+                    let d = item.openDate || '날짜 미상';
+                    if (d.length >= 4) d = d.substring(0, 4) + ((d.length >= 7) ? d.substring(4, 7) : '');
+                    if (!stats[d]) stats[d] = 0; stats[d]++;
+                });
+                return Object.keys(stats).sort().map(k => ({ name: k, count: stats[k] }));
+            }, [companyData]);
 
             return (
                 <div className="space-y-6">
-                    {/* 상단 정보 및 탭 - 애니메이션 적용 */}
-                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-200 pb-4 animate-fadeIn">
-                        <div>
-                            <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-                                {company}
-                                <span className="text-sm font-normal text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
-                                    총 {companyData.length}개
-                                </span>
-                            </h2>
-                            <p className="text-sm text-slate-500 mt-1">이번 달 신규: <span className="text-indigo-600 font-bold">{newCount}개</span></p>
-                        </div>
-                        
+                    <div className="flex flex-col md:flex-row justify-between gap-4 border-b border-slate-200 pb-4 animate-fadeIn">
+                        <div><h2 className="text-2xl font-bold text-slate-800">{company} <span className="text-sm font-normal text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">총 {companyData.length}개</span></h2></div>
                         <div className="flex bg-slate-100 p-1 rounded-lg">
-                            <button 
-                                onClick={() => setActiveTab('list')}
-                                className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'list' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                            >
-                                데이터 목록
-                            </button>
-                            <button 
-                                onClick={() => setActiveTab('stats')}
-                                className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'stats' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                            >
-                                통계 / 차트
-                            </button>
+                            <button onClick={() => setActiveTab('list')} className={`px-4 py-2 rounded-md text-sm font-medium ${activeTab === 'list' ? 'bg-white shadow-sm' : 'text-slate-500'}`}>목록</button>
+                            <button onClick={() => setActiveTab('stats')} className={`px-4 py-2 rounded-md text-sm font-medium ${activeTab === 'stats' ? 'bg-white shadow-sm' : 'text-slate-500'}`}>통계</button>
                         </div>
                     </div>
-
                     {activeTab === 'stats' ? (
                         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm min-h-[400px] animate-fadeIn">
-                            <h3 className="text-lg font-bold text-slate-800 mb-6">월별 신규 과정 오픈 추이</h3>
-                            <ResponsiveContainer width="100%" height={350}>
-                                {BarChart ? (
-                                    <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
-                                        <XAxis dataKey="name" tick={{fill: '#64748B', fontSize: 12}} axisLine={false} tickLine={false} />
-                                        <YAxis tick={{fill: '#64748B', fontSize: 12}} axisLine={false} tickLine={false} />
-                                        <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} cursor={{fill: '#F1F5F9'}} />
-                                        <Bar dataKey="count" name="과정 수" fill="#3B82F6" radius={[4, 4, 0, 0]} barSize={40}>
-                                            <LabelList dataKey="count" position="top" style={{ fontSize: '12px', fill: '#3B82F6', fontWeight: 'bold' }} />
-                                        </Bar>
-                                    </BarChart>
-                                ) : (
-                                    <div className="flex h-full items-center justify-center text-slate-400">차트 로딩 중...</div>
-                                )}
-                            </ResponsiveContainer>
-                            {chartData.length === 0 && <div className="text-center text-slate-400">데이터가 없습니다.</div>}
+                            <h3 className="font-bold mb-6">월별 추이</h3>
+                            <ResponsiveContainer width="100%" height={350}><BarChart data={chartData}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="name"/><YAxis/><Tooltip/><Bar dataKey="count" fill="#3B82F6" barSize={40}><LabelList dataKey="count" position="top"/></Bar></BarChart></ResponsiveContainer>
                         </div>
                     ) : (
-                        // 데이터 목록 영역 (애니메이션 분리)
                         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden animate-fadeIn">
-                            <div className="p-4 border-b border-slate-200 flex flex-wrap gap-3 justify-end bg-slate-50">
-                                <button
-                                    onClick={handleDownloadData}
-                                    className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-300 text-slate-700 rounded-md hover:bg-slate-50 hover:text-blue-600 hover:border-blue-300 transition-colors text-sm font-medium shadow-sm mr-auto sm:mr-0"
-                                >
-                                    <Icon name="Download" size={16} /> 데이터 내려받기 (Excel)
-                                </button>
-
-                                <button
-                                    onClick={onWebImport}
-                                    className="flex items-center gap-2 px-3 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors text-sm font-medium shadow-sm"
-                                >
-                                    <Icon name="ExternalLink" size={16} /> 신규 과정 찾기 (웹)
-                                </button>
-                                <label className="flex items-center gap-2 px-3 py-2 bg-emerald-600 text-white rounded-md cursor-pointer hover:bg-emerald-700 transition-colors text-sm font-medium shadow-sm">
-                                    <Icon name="Upload" size={16} />
-                                    <span>CSV 불러오기(편집반영)</span>
-                                    <input type="file" accept=".csv,.xlsx" className="hidden" onChange={onFileUpload} />
-                                </label>
-                                <button 
-                                    onClick={onAddRow}
-                                    className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-300 text-slate-600 rounded-md hover:bg-slate-50 transition-colors text-sm font-medium"
-                                >
-                                    <Icon name="Plus" size={16} /> 직접 입력
-                                </button>
+                            <div className="p-4 border-b flex flex-wrap gap-3 justify-end">
+                                <button onClick={handleDownloadData} className="flex items-center gap-2 px-3 py-2 bg-white border rounded text-sm hover:bg-slate-50"><Icon name="Download"/> 엑셀 다운</button>
+                                <button onClick={onWebImport} className="flex items-center gap-2 px-3 py-2 bg-indigo-600 text-white rounded text-sm hover:bg-indigo-700"><Icon name="ExternalLink"/> 웹 추출</button>
+                                <label className="flex items-center gap-2 px-3 py-2 bg-emerald-600 text-white rounded cursor-pointer hover:bg-emerald-700 text-sm"><Icon name="Upload"/> CSV 업로드<input type="file" className="hidden" onChange={onFileUpload}/></label>
+                                <button onClick={onAddRow} className="flex items-center gap-2 px-3 py-2 bg-white border rounded text-sm hover:bg-slate-50"><Icon name="Plus"/> 직접 입력</button>
                             </div>
-                            
                             <div className="overflow-x-auto">
                                 <table className="w-full text-sm text-left text-slate-600">
-                                    <thead className="text-xs text-slate-700 uppercase bg-slate-100 border-b border-slate-200">
-                                        <tr>
-                                            <th className="px-4 py-3 font-semibold">번호</th>
-                                            <th className="px-4 py-3 font-semibold min-w-[200px]">과정명</th>
-                                            <th className="px-4 py-3 font-semibold">학점</th>
-                                            <th className="px-4 py-3 font-semibold">시간</th>
-                                            <th className="px-4 py-3 font-semibold">분야</th>
-                                            <th className="px-4 py-3 font-semibold">오픈일</th>
-                                            <th className="px-4 py-3 font-semibold">상태</th>
-                                            <th className="px-4 py-3 font-semibold">특이사항</th> 
-                                            <th className="px-4 py-3 font-semibold text-center">관리</th>
-                                        </tr>
-                                    </thead>
+                                    <thead className="bg-slate-100 uppercase text-xs"><tr><th className="px-4 py-3">번호</th><th className="px-4 py-3">과정명</th><th className="px-4 py-3">학점</th><th className="px-4 py-3">시간</th><th className="px-4 py-3">분야</th><th className="px-4 py-3">오픈일</th><th className="px-4 py-3">상태</th><th className="px-4 py-3">특이사항</th><th className="px-4 py-3 text-center">관리</th></tr></thead>
                                     <tbody className="divide-y divide-slate-200">
-                                        {companyData.map((row) => (
+                                        {companyData.map(row => (
                                             <tr key={row.id} className="hover:bg-slate-50">
-                                                <td className="px-4 py-3 font-mono text-slate-500">{row.no}</td>
-                                                <td className="px-4 py-3 font-medium text-slate-900">{row.title}</td>
-                                                <td className="px-4 py-3">{row.credits}</td>
-                                                <td className="px-4 py-3">{row.hours}시간</td>
-                                                <td className="px-4 py-3"><span className="px-2 py-1 rounded-full bg-slate-100 text-slate-600 text-xs">{row.category || '-'}</span></td>
-                                                <td className="px-4 py-3 text-slate-600">{row.openDate}</td>
-                                                <td className="px-4 py-3">
-                                                    {row.removed ? 
-                                                        <span className="text-red-500 text-xs font-bold bg-red-50 px-2 py-1 rounded">삭제됨</span> : 
-                                                        <span className="text-emerald-600 text-xs font-bold bg-emerald-50 px-2 py-1 rounded">운영중</span>
-                                                    }
-                                                </td>
-                                                <td className="px-4 py-3 max-w-[150px] truncate" title={row.remarks || ''}>
-                                                    {row.remarks || '-'}
-                                                </td>
+                                                <td className="px-4 py-3">{row.no}</td><td className="px-4 py-3 font-medium">{row.title}</td><td className="px-4 py-3">{row.credits}</td><td className="px-4 py-3">{row.hours}</td><td className="px-4 py-3">{row.category}</td><td className="px-4 py-3">{row.openDate}</td>
+                                                <td className="px-4 py-3">{row.removed ? <span className="text-red-500 text-xs font-bold">삭제됨</span> : <span className="text-emerald-600 text-xs font-bold">운영중</span>}</td>
+                                                <td className="px-4 py-3 max-w-[100px] truncate" title={row.remarks}>{row.remarks}</td>
                                                 <td className="px-4 py-3 text-center flex justify-center gap-1">
-                                                    <button 
-                                                        onClick={() => setEditingItem(row)}
-                                                        className="text-slate-400 hover:text-indigo-600 p-1 rounded hover:bg-indigo-50"
-                                                        title="수정"
-                                                    >
-                                                        <Icon name="Edit" size={16} />
-                                                    </button>
-                                                    <button 
-                                                        onClick={() => onDeleteRow(row.id)} 
-                                                        className="text-slate-400 hover:text-red-600 p-1 rounded hover:bg-red-50"
-                                                        title="삭제"
-                                                    >
-                                                        <Icon name="Trash2" size={16} />
-                                                    </button>
+                                                    <button onClick={() => setEditingItem(row)} className="text-slate-400 hover:text-indigo-600 p-1"><Icon name="Edit" size={16}/></button>
+                                                    <button onClick={() => onDeleteRow(row.id)} className="text-slate-400 hover:text-red-600 p-1"><Icon name="Trash2" size={16}/></button>
                                                 </td>
                                             </tr>
                                         ))}
-                                        {companyData.length === 0 && (
-                                            <tr>
-                                                <td colSpan="9" className="px-6 py-12 text-center text-slate-400 bg-slate-50">
-                                                    데이터가 없습니다. CSV를 불러오거나 신규 과정을 등록해보세요.
-                                                </td>
-                                            </tr>
-                                        )}
                                     </tbody>
                                 </table>
                             </div>
                         </div>
                     )}
-                    
-                    {/* 모달은 transform 영향 안 받는 곳으로 이동 */}
-                    <EditModal 
-                        key={editingItem ? editingItem.id : 'edit-modal'}
-                        isOpen={!!editingItem} 
-                        item={editingItem} 
-                        onClose={() => setEditingItem(null)} 
-                        onSave={onUpdateRow}
-                    />
+                    <EditModal key={editingItem?.id} isOpen={!!editingItem} item={editingItem} onClose={() => setEditingItem(null)} onSave={onUpdateRow} />
                 </div>
             );
         };
 
-        // --- 메인 앱 ---
         const App = () => {
             const [currentView, setCurrentView] = useState('dashboard');
             const [selectedCompany, setSelectedCompany] = useState('');
+            const [searchTerm, setSearchTerm] = useState('');
+            const [data, setData] = useState([]);
+            const [sheetUrl, setSheetUrl] = useState(DEFAULT_SHEET_URL);
+            const [showSheetModal, setShowSheetModal] = useState(false);
             const [showImportModal, setShowImportModal] = useState(false);
-            const [encoding, setEncoding] = useState('EUC-KR');
-            const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-            const [searchTerm, setSearchTerm] = useState(''); // 검색어 상태 추가
-
-            const companies = ['비바샘', '티처빌', '아이스크림', '티셀파', '한교원', '사제동행', '창비'];
-            const companyUrls = {
-                '비바샘': 'https://vivasam.com',
-                '티처빌': 'https://www.teacherville.co.kr/',
-                '아이스크림': 'https://teacher.i-scream.co.kr/course/crs/creditList.do?searchOrdinalTyCode=TY01&searchOrderField=NEW',
-                '티셀파': 'http://www.tsherpa.co.kr',
-            };
-
-            const [data, setData] = useState([
-                { id: 1, company: '아이스크림', no: '1', title: '이어령의 생활 속 인문학', credits: 2, hours: 30, minutes: 1800, category: '자기계발', openDate: '2023.08', removed: '', remarks: '인기 강좌' },
-                { id: 2, company: '티처빌', no: '1', title: 'AI 디지털 교과서 활용', credits: 1, hours: 15, minutes: 900, category: '에듀테크', openDate: '2023.09', removed: '', remarks: '' },
-                { id: 3, company: '비바샘', no: '1', title: '교실 속 연극 놀이', credits: 2, hours: 30, minutes: 1800, category: '교과지도', openDate: '2023.10', removed: '', remarks: '2학점 추천' },
-            ]);
-
             const [importText, setImportText] = useState('');
             const [detectedNewCourses, setDetectedNewCourses] = useState([]);
-            const [analysisResult, setAnalysisResult] = useState(null);
+            const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+            const [loading, setLoading] = useState(false);
+            const [syncError, setSyncError] = useState(false); // 연동 상태 에러 플래그
 
-            const handleMenuClick = (company) => {
-                setSelectedCompany(company);
-                setCurrentView('company');
-                setIsMobileMenuOpen(false);
-                setSearchTerm(''); // 메뉴 이동 시 검색어 초기화
-            };
+            const companies = ['비바샘', '티처빌', '아이스크림', '티셀파', '한교원', '사제동행', '창비'];
+            const companyUrls = { '비바샘': 'https://vivasam.com', '티처빌': 'https://www.teacherville.co.kr' };
 
-            const handleDashboardClick = () => {
-                setSelectedCompany('');
-                setCurrentView('dashboard');
-                setIsMobileMenuOpen(false);
-                setSearchTerm('');
-            };
+            useEffect(() => {
+                const localData = localStorage.getItem('courseData');
+                if (localData) setData(JSON.parse(localData));
+                const storedUrl = localStorage.getItem('googleSheetUrl');
+                const urlToUse = storedUrl || DEFAULT_SHEET_URL;
+                if (urlToUse) {
+                    setSheetUrl(urlToUse);
+                    fetchFromSheet(urlToUse);
+                }
+            }, []);
 
-            // [수정됨] 삭제 시 번호 재정렬 로직 추가
-            const handleDelete = (id) => {
-                if (confirm("정말 이 데이터를 삭제하시겠습니까?\n(삭제 후 번호는 자동 재정렬됩니다)")) {
-                    // 삭제할 아이템 찾기
-                    const itemToDelete = data.find(item => item.id === id);
-                    if (!itemToDelete) return;
+            useEffect(() => { localStorage.setItem('courseData', JSON.stringify(data)); }, [data]);
 
-                    // 삭제 반영된 임시 데이터 생성
-                    const tempFiltered = data.filter(item => item.id !== id);
+            // 구글 시트 읽기 (에러 핸들링 강화 & 캐시 방지)
+            const fetchFromSheet = async (url) => {
+                setLoading(true);
+                setSyncError(false);
+                try {
+                    // 1. URL에 타임스탬프 추가하여 캐시 문제 방지
+                    const targetUrl = url.includes('?') ? `${url}&action=read` : `${url}?action=read`;
+                    const cacheBuster = `&t=${new Date().getTime()}`;
                     
-                    // 해당 회사 데이터 번호 재정렬
-                    const renumbered = renumberCompanyData(tempFiltered, itemToDelete.company);
-                    setData(renumbered);
+                    const res = await fetch(targetUrl + cacheBuster, { 
+                        method: 'GET',
+                        // redirect: 'follow'는 브라우저 기본 동작이지만 명시
+                    });
+                    
+                    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+                    
+                    const json = await res.json();
+                    if (Array.isArray(json)) {
+                        const formatted = json.map(item => ({ ...item, id: item.id || Date.now() + Math.random() }));
+                        setData(formatted);
+                    }
+                } catch (e) {
+                    console.error("Sheet Load Failed:", e);
+                    setSyncError(true);
+                    // 사용자에게 알림은 syncError 상태를 통해 UI로 표시됨
+                } finally { setLoading(false); }
+            };
+
+            // 구글 시트 쓰기
+            const saveToSheet = async (url, newData) => {
+                setLoading(true);
+                setSyncError(false);
+                try {
+                    await fetch(url + '?action=sync', {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        headers: { 'Content-Type': 'text/plain' }, // application/json 대신 text/plain 시도 (CORS 회피용)
+                        body: JSON.stringify(newData)
+                    });
+                } catch (e) {
+                    console.error("Save Failed:", e);
+                    setSyncError(true);
+                } finally { setLoading(false); }
+            };
+
+            const handleSheetSync = (url) => {
+                setSheetUrl(url);
+                localStorage.setItem('googleSheetUrl', url);
+                saveToSheet(url, data);
+                setShowSheetModal(false);
+            };
+
+            const updateAndSync = (newData) => {
+                setData(newData);
+                if (sheetUrl) saveToSheet(sheetUrl, newData);
+            };
+
+            const handleAddRow = () => {
+                const newData = [...data, { id: Date.now(), company: selectedCompany, no: '', title: '새 과정', openDate: '', removed: '' }];
+                const renumbered = renumberCompanyData(newData, selectedCompany);
+                updateAndSync(renumbered);
+            };
+            const handleDelete = (id) => {
+                if(confirm('삭제하시겠습니까?\n(삭제 시 번호는 자동으로 재정렬됩니다)')) {
+                    const target = data.find(d => d.id === id);
+                    const newData = data.filter(d => d.id !== id);
+                    const renumbered = target ? renumberCompanyData(newData, target.company) : newData;
+                    updateAndSync(renumbered);
                 }
             };
-
-            // [수정됨] 직접 입력 추가 시 로직 개선
-            const handleAddRow = () => {
-                const newRow = {
-                    id: Date.now(),
-                    company: selectedCompany,
-                    no: '', // renumber 함수가 처리해줄 것이므로 일단 빈값
-                    title: '새 과정', 
-                    credits: '', 
-                    hours: '', 
-                    minutes: '', 
-                    category: '', 
-                    certification: '',
-                    openDate: '',
-                    removed: '', 
-                    remarks: ''
-                };
-                
-                const newData = [...data, newRow];
-                // 추가 후 전체 재정렬 (신규는 맨 뒤로 가므로 번호가 마지막+1이 됨)
-                const renumbered = renumberCompanyData(newData, selectedCompany);
-                setData(renumbered);
+            const handleUpdateRow = (item) => {
+                const newData = data.map(d => d.id === item.id ? item : d);
+                const renumbered = renumberCompanyData(newData, item.company);
+                updateAndSync(renumbered);
             };
-
-            // [수정됨] 수정 시 번호 재정렬 로직 추가 (판매중지 처리 등)
-            const handleUpdateRow = (updatedItem) => {
-                // 일단 데이터 업데이트
-                const updatedData = data.map(item => item.id === updatedItem.id ? updatedItem : item);
-                
-                // 번호 재정렬 수행
-                const renumbered = renumberCompanyData(updatedData, updatedItem.company);
-                setData(renumbered);
-            };
-
-            const handleFileUpload = (event) => {
-                const file = event.target.files[0];
+            const handleFileUpload = (e) => {
+                const file = e.target.files[0];
                 if (!file) return;
                 const reader = new FileReader();
-                reader.onload = (e) => {
-                    const rows = parseCSV(e.target.result);
+                reader.onload = (evt) => {
+                    const rows = parseCSV(evt.target.result);
                     let startParsing = false;
-                    let headerMap = {}; 
+                    let headerMap = {};
                     const uploadedItems = [];
-
-                    rows.forEach((cols) => {
+                    rows.forEach(cols => {
                         if (!startParsing) {
                             const cleanCols = cols.map(c => c ? c.replace(/\s/g, '') : '');
                             if (cleanCols.includes('번호') && cleanCols.includes('과정명')) {
@@ -699,261 +399,110 @@
                                     category: cleanCols.indexOf('연수분야'),
                                     openDate: cleanCols.indexOf('신규오픈날짜'),
                                     removed: cleanCols.indexOf('사라진과정'),
-                                    remarks: cleanCols.indexOf('특이사항'),
+                                    remarks: cleanCols.indexOf('특이사항')
                                 };
                             }
                             return;
                         }
-                        if (startParsing) {
-                            const title = cols[headerMap.title];
-                            if (title && title.replace(/\s/g, '') !== '과정명') {
-                                uploadedItems.push({
-                                    company: selectedCompany,
-                                    no: cols[headerMap.no] || '',
-                                    title: title.trim(),
-                                    credits: cols[headerMap.credits] || '',
-                                    hours: cols[headerMap.hours] || '',
-                                    category: cols[headerMap.category] || '',
-                                    openDate: cols[headerMap.openDate] || '',
-                                    removed: cols[headerMap.removed] || '',
-                                    remarks: cols[headerMap.remarks] || '',
-                                });
-                            }
+                        const title = cols[headerMap.title];
+                        if (title && title.replace(/\s/g, '') !== '과정명') {
+                            uploadedItems.push({
+                                company: selectedCompany,
+                                no: cols[headerMap.no] || '',
+                                title: title.trim(),
+                                credits: cols[headerMap.credits] || '',
+                                hours: cols[headerMap.hours] || '',
+                                category: cols[headerMap.category] || '',
+                                openDate: cols[headerMap.openDate] || '',
+                                removed: cols[headerMap.removed] || '',
+                                remarks: cols[headerMap.remarks] || ''
+                            });
                         }
                     });
-
                     if (uploadedItems.length > 0) {
-                        // 1. 기존 데이터 + 업로드 데이터 병합
                         const currentCompanyData = data.filter(d => d.company === selectedCompany);
                         const otherCompanyData = data.filter(d => d.company !== selectedCompany);
-                        
                         const dataMap = new Map();
-                        currentCompanyData.forEach(item => {
-                            const key = item.title.replace(/\s/g, '');
-                            dataMap.set(key, item);
-                        });
-
+                        currentCompanyData.forEach(item => dataMap.set(item.title.replace(/\s/g, ''), item));
                         uploadedItems.forEach(newItem => {
                             const key = newItem.title.replace(/\s/g, '');
-                            if (dataMap.has(key)) {
-                                const existingItem = dataMap.get(key);
-                                const mergedItem = { ...existingItem, ...newItem }; // 덮어쓰기
-                                dataMap.set(key, mergedItem);
-                            } else {
-                                const newId = Date.now() + Math.random();
-                                dataMap.set(key, { ...newItem, id: newId });
-                            }
+                            if (dataMap.has(key)) dataMap.set(key, { ...dataMap.get(key), ...newItem });
+                            else dataMap.set(key, { ...newItem, id: Date.now() + Math.random() });
                         });
-
-                        // 2. 병합된 데이터에 대해 번호 재정렬
-                        const mergedCompanyData = Array.from(dataMap.values());
-                        
-                        // 현재 회사 데이터만 재정렬을 위해 임시 배열 구성
-                        // (renumberCompanyData 함수 재사용을 위해 전체 구조 생성)
-                        const allTempData = [...otherCompanyData, ...mergedCompanyData];
-                        const finalData = renumberCompanyData(allTempData, selectedCompany);
-
-                        setData(finalData);
-                        alert(`처리 완료! ${uploadedItems.length}건을 확인했습니다.`);
-                    } else {
-                        alert('데이터 인식 실패. 헤더("번호","과정명")가 있는지 확인해주세요.');
+                        const merged = [...otherCompanyData, ...Array.from(dataMap.values())];
+                        const renumbered = renumberCompanyData(merged, selectedCompany);
+                        updateAndSync(renumbered);
+                        alert(`${uploadedItems.length}건이 처리되었습니다.`);
                     }
                 };
-                reader.readAsText(file, encoding);
+                reader.readAsText(file, 'EUC-KR');
             };
 
             const analyzeImportText = () => {
-                if (!importText.trim()) return;
-                const lines = importText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-                const existing = new Set(data.filter(d => d.company === selectedCompany).map(d => d.title.replace(/\s+/g, '')));
-                const candidates = [];
-                const duplicates = [];
-                let ignored = 0;
-                lines.forEach(line => {
-                    if (line.length <= 2 || /\d+원/.test(line) || /^\d+(차시|학점)$/.test(line) || ['미리보기','수강신청'].some(k=>line.includes(k))) {
-                        ignored++;
-                        return;
-                    }
-                    if (existing.has(line.replace(/\s+/g, ''))) duplicates.push(line);
-                    else candidates.push(line);
-                });
-                const unique = [...new Set(candidates)];
-                setDetectedNewCourses(unique.map(t => ({ title: t, checked: true })));
-                setAnalysisResult({ total: lines.length, new: unique.length, dup: duplicates.length, ignored });
+                if(!importText) return;
+                const lines = importText.split('\n').filter(l => l.trim().length > 2);
+                setDetectedNewCourses(lines.map(t => ({ title: t, checked: true })));
             };
-
-            // [수정됨] 웹 추출 추가 시 번호 재정렬
             const handleAddDetected = () => {
-                const toAdd = detectedNewCourses.filter(c => c.checked);
-                const newRows = toAdd.map((item, index) => ({
-                    id: Date.now() + Math.random() + index,
-                    company: selectedCompany,
-                    no: '',
-                    title: item.title, 
-                    credits: '', 
-                    hours: '', 
-                    minutes: '', 
-                    category: '미분류',
-                    certification: '',
-                    openDate: '',
-                    removed: '', 
-                    remarks: '웹 추출'
+                const newItems = detectedNewCourses.filter(c => c.checked).map((c, i) => ({
+                    id: Date.now() + i, company: selectedCompany, title: c.title, openDate: '', removed: '', no: ''
                 }));
-                
-                const newData = [...data, ...newRows];
+                const newData = [...data, ...newItems];
                 const renumbered = renumberCompanyData(newData, selectedCompany);
-                setData(renumbered);
-                
-                setShowImportModal(false);
-                setImportText('');
-                setDetectedNewCourses([]);
-                setAnalysisResult(null);
-                alert(`${toAdd.length}건 등록 완료!`);
+                updateAndSync(renumbered);
+                setShowImportModal(false); setDetectedNewCourses([]); setImportText('');
+                alert("추가 완료!");
             };
 
-            // 검색창 렌더링 포함한 메인 UI 구조 변경
             return (
                 <div className="flex min-h-screen bg-slate-50 font-sans text-slate-900">
                     <aside className="hidden md:flex w-64 flex-col bg-slate-900 text-slate-300 shadow-xl z-20 sticky top-0 h-screen">
                         <div className="p-6 border-b border-slate-700 flex items-center gap-3">
-                            <div className="bg-indigo-600 p-2 rounded-lg text-white">
-                                <Icon name="LayoutDashboard" size={20} />
-                            </div>
-                            <h1 className="text-lg font-bold text-white leading-tight">콘텐츠<br/>현황 관리</h1>
+                            <div className="bg-indigo-600 p-2 rounded-lg text-white"><Icon name="LayoutDashboard" /></div>
+                            <h1 className="text-lg font-bold text-white">콘텐츠<br/>현황 관리</h1>
                         </div>
-                        
-                        <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-                            <button onClick={handleDashboardClick} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${currentView === 'dashboard' ? 'bg-indigo-600 text-white font-bold shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}>
-                                <Icon name="Home" size={18} />
-                                <span>메인 대시보드</span>
-                            </button>
-                            <div className="pt-4 pb-2 text-xs font-bold text-slate-500 px-4 uppercase tracking-wider">경쟁사 목록</div>
-                            {companies.map(company => (
-                                <button key={company} onClick={() => handleMenuClick(company)} className={`w-full flex items-center justify-between px-4 py-3 rounded-lg transition-all ${selectedCompany === company ? 'bg-slate-800 text-white font-medium border-l-4 border-indigo-500' : 'hover:bg-slate-800 hover:text-white'}`}>
-                                    <span>{company}</span>
-                                    {selectedCompany === company && <div className="w-1.5 h-1.5 rounded-full bg-indigo-400"></div>}
-                                </button>
-                            ))}
-                        </nav>
-                        <div className="p-4 border-t border-slate-800 text-xs text-slate-500 text-center">© 2025 vivasam</div>
-                    </aside>
-
-                    <div className="flex-1 flex flex-col min-w-0">
-                        {/* 상단 통합 헤더 (검색창 포함) */}
-                        <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
-                            <div className="max-w-7xl mx-auto px-4 md:px-8 py-3 flex justify-between items-center">
-                                {/* 모바일 메뉴 버튼 */}
-                                <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="md:hidden mr-4 text-slate-500">
-                                    <Icon name="Menu" size={24} />
-                                </button>
-
-                                {/* 페이지 타이틀 (데스크탑) */}
-                                <div className="hidden md:flex items-center gap-2 font-bold text-slate-700 text-lg">
-                                    {searchTerm ? '검색 결과' : (currentView === 'dashboard' ? '메인 대시보드' : selectedCompany)}
-                                </div>
-
-                                {/* 검색창 */}
-                                <div className="flex-1 max-w-md ml-auto">
-                                    <div className="relative">
-                                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                                            <Icon name="Search" size={18} />
-                                        </div>
-                                        <input 
-                                            type="text" 
-                                            className="block w-full pl-10 pr-3 py-2 border border-slate-300 rounded-full leading-5 bg-slate-50 placeholder-slate-400 focus:outline-none focus:bg-white focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-all" 
-                                            placeholder="과정명 검색..." 
-                                            value={searchTerm}
-                                            onChange={(e) => setSearchTerm(e.target.value)}
-                                        />
-                                        {searchTerm && (
-                                            <button 
-                                                onClick={() => setSearchTerm('')}
-                                                className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600"
-                                            >
-                                                <Icon name="X" size={16} />
-                                            </button>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-                        </header>
-
-                        {/* 모바일 메뉴 드롭다운 */}
-                        {isMobileMenuOpen && (
-                            <div className="md:hidden bg-slate-800 text-slate-300 p-4 absolute top-14 left-0 right-0 z-20 shadow-xl border-t border-slate-700">
-                                <button onClick={handleDashboardClick} className="block w-full text-left py-3 px-2 hover:text-white border-b border-slate-700 font-bold">메인 대시보드</button>
-                                {companies.map(c => (<button key={c} onClick={() => handleMenuClick(c)} className="block w-full text-left py-3 px-2 hover:text-white border-b border-slate-700">{c}</button>))}
+                        {sheetUrl && (
+                            <div className={`px-6 py-2 text-xs flex items-center gap-2 ${syncError ? 'bg-red-900 text-red-200' : 'bg-green-900 text-green-300'}`}>
+                                <Icon name="Sheet" size={14}/> {syncError ? '연동 오류 (설정 확인)' : '구글 시트 연동됨'}
                             </div>
                         )}
-
-                        <main className="flex-1 p-4 md:p-8 max-w-7xl mx-auto w-full">
-                            {searchTerm ? (
-                                <SearchResults 
-                                    data={data} 
-                                    searchTerm={searchTerm} 
-                                    companies={companies}
-                                    onDeleteRow={handleDelete}
-                                    onUpdateRow={handleUpdateRow}
-                                />
-                            ) : currentView === 'dashboard' ? (
-                                <MainDashboard data={data} companies={companies} onCompanyClick={handleMenuClick} />
-                            ) : (
-                                <CompanyDetail 
-                                    key={selectedCompany}
-                                    company={selectedCompany} data={data} setData={setData}
-                                    onAddRow={handleAddRow} onDeleteRow={handleDelete} onUpdateRow={handleUpdateRow}
-                                    onFileUpload={handleFileUpload} onWebImport={() => setShowImportModal(true)}
-                                />
-                            )}
+                        <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+                            <button onClick={() => {setSelectedCompany(''); setCurrentView('dashboard');}} className="w-full flex items-center gap-3 px-4 py-3 rounded hover:bg-slate-800"><Icon name="Home"/> 메인 대시보드</button>
+                            <div className="pt-4 pb-2 text-xs font-bold text-slate-500 px-4">경쟁사 목록</div>
+                            {companies.map(c => <button key={c} onClick={() => {setSelectedCompany(c); setCurrentView('company');}} className="w-full flex px-4 py-3 rounded hover:bg-slate-800">{c}</button>)}
+                        </nav>
+                        <div className="p-4 border-t border-slate-800 text-xs text-center">© 2025 vivasam</div>
+                    </aside>
+                    <div className="flex-1 flex flex-col min-w-0">
+                        <header className="bg-white border-b sticky top-0 z-30 shadow-sm flex justify-between items-center p-4">
+                            <div className="flex items-center gap-2 font-bold text-lg"><button className="md:hidden"><Icon name="Menu"/></button> {selectedCompany || '메인 대시보드'}</div>
+                            <div className="flex items-center gap-3">
+                                {loading && <div className="loader"></div>}
+                                {syncError && <span className="text-xs text-red-500 font-bold hidden md:inline">연동 실패</span>}
+                                <div className="relative"><input type="text" className="border rounded-full pl-8 pr-3 py-1 text-sm" placeholder="검색..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /><span className="absolute left-2.5 top-1.5 text-slate-400"><Icon name="Search" size={16}/></span></div>
+                                <button onClick={() => setShowSheetModal(true)} className="text-slate-500 hover:text-green-600"><Icon name="Settings" size={24}/></button>
+                            </div>
+                        </header>
+                        <main className="p-8">
+                            {searchTerm ? <SearchResults data={data} searchTerm={searchTerm} companies={companies} onDeleteRow={handleDelete} onUpdateRow={handleUpdateRow}/> : 
+                             currentView === 'dashboard' ? <MainDashboard data={data} companies={companies} onCompanyClick={(c) => {setSelectedCompany(c); setCurrentView('company');}}/> : 
+                             <CompanyDetail company={selectedCompany} data={data} setData={setData} onAddRow={handleAddRow} onDeleteRow={handleDelete} onUpdateRow={handleUpdateRow} onFileUpload={handleFileUpload} onWebImport={() => setShowImportModal(true)}/>}
                         </main>
                     </div>
-
+                    {/* 모달들 */}
+                    <GoogleSheetModal isOpen={showSheetModal} onClose={() => setShowSheetModal(false)} sheetUrl={sheetUrl} onSync={handleSheetSync} />
                     {showImportModal && (
-                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-                            <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col">
-                                <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-xl">
-                                    <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Icon name="ExternalLink" size={20} className="text-indigo-600" /> 웹사이트 신규 과정 추출 ({selectedCompany})</h3>
-                                    <button onClick={() => setShowImportModal(false)} className="text-slate-400 hover:text-slate-600"><Icon name="X" size={24} /></button>
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+                            <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl p-6 space-y-4">
+                                <h3 className="font-bold text-lg flex gap-2"><Icon name="ExternalLink"/> 웹사이트 신규 과정 추출 ({selectedCompany})</h3>
+                                <div className="grid grid-cols-2 gap-4 text-sm">
+                                    <div>1. 사이트 접속 <a href={companyUrls[selectedCompany]} target="_blank" className="text-blue-600 underline">이동</a></div>
+                                    <div>2. 텍스트 복사 후 붙여넣기</div>
                                 </div>
-                                <div className="p-6 space-y-6 overflow-y-auto flex-1">
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                        <div className="space-y-2">
-                                            <p className="text-xs font-bold text-slate-500">STEP 1. 사이트 접속</p>
-                                            {companyUrls[selectedCompany] ? (
-                                                <a href={companyUrls[selectedCompany]} target="_blank" rel="noopener noreferrer" className="block w-full text-center py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-bold transition-colors">사이트 열기 <Icon name="ExternalLink" size={14} className="inline"/></a>
-                                            ) : <div className="py-2.5 bg-slate-50 text-slate-400 text-center text-sm rounded-lg">URL 없음</div>}
-                                        </div>
-                                        <div className="space-y-2">
-                                            <p className="text-xs font-bold text-slate-500">STEP 2. 복사 후 붙여넣기</p>
-                                            <button onClick={analyzeImportText} className="w-full py-2.5 bg-slate-800 hover:bg-black text-white rounded-lg text-sm font-bold transition-colors">분석하기</button>
-                                        </div>
-                                    </div>
-                                    <textarea className="w-full h-32 p-3 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 resize-none" placeholder="사이트에서 과정명 목록을 드래그 복사(Ctrl+C) 후 여기에 붙여넣기(Ctrl+V) 하세요..." value={importText} onChange={(e) => setImportText(e.target.value)} />
-                                    {analysisResult && (
-                                        <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-3 animate-fadeIn">
-                                            <div className="flex gap-4 text-xs text-slate-500 border-b border-slate-200 pb-2 mb-2">
-                                                <span>총 {analysisResult.total}줄</span>
-                                                <span className="text-amber-600">중복 {analysisResult.dup}건</span>
-                                                <span className="text-slate-400">제외 {analysisResult.ignored}건</span>
-                                            </div>
-                                            {detectedNewCourses.length > 0 ? (
-                                                <div className="max-h-40 overflow-y-auto space-y-1 pr-1">
-                                                    {detectedNewCourses.map((c, idx) => (
-                                                        <label key={idx} className="flex items-center gap-2 p-2 hover:bg-white rounded cursor-pointer border border-transparent hover:border-slate-200 transition-all">
-                                                            <input type="checkbox" checked={c.checked} onChange={(e) => { const up = [...detectedNewCourses]; up[idx].checked = e.target.checked; setDetectedNewCourses(up); }} className="rounded text-indigo-600"/>
-                                                            <span className="text-sm font-medium text-slate-700">{c.title}</span>
-                                                            <span className="ml-auto text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-bold">New</span>
-                                                        </label>
-                                                    ))}
-                                                </div>
-                                            ) : <div className="text-center text-sm text-slate-400 py-4">신규 과정이 없습니다.</div>}
-                                        </div>
-                                    )}
-                                </div>
-                                <div className="p-4 border-t border-slate-100 bg-slate-50 rounded-b-xl flex justify-end gap-2">
-                                    <button onClick={() => setShowImportModal(false)} className="px-4 py-2 text-slate-500 hover:bg-slate-200 rounded-lg text-sm font-bold">취소</button>
-                                    <button onClick={handleAddDetected} disabled={detectedNewCourses.filter(c=>c.checked).length===0} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-indigo-200">{detectedNewCourses.filter(c=>c.checked).length}개 등록하기</button>
-                                </div>
+                                <textarea className="w-full h-32 border rounded p-2 text-sm" value={importText} onChange={e => setImportText(e.target.value)} placeholder="붙여넣기..."></textarea>
+                                <div className="flex gap-2"><button onClick={analyzeImportText} className="px-4 py-2 bg-slate-800 text-white rounded text-sm">분석하기</button></div>
+                                {detectedNewCourses.length > 0 && <div className="max-h-40 overflow-auto border p-2 text-sm">{detectedNewCourses.map((c, i) => <div key={i}><input type="checkbox" checked={c.checked} onChange={() => {const n = [...detectedNewCourses]; n[i].checked = !n[i].checked; setDetectedNewCourses(n);}}/> {c.title}</div>)}</div>}
+                                <div className="flex justify-end gap-2"><button onClick={() => setShowImportModal(false)} className="px-4 py-2 border rounded text-sm">취소</button><button onClick={handleAddDetected} className="px-4 py-2 bg-indigo-600 text-white rounded text-sm">추가하기</button></div>
                             </div>
                         </div>
                     )}
