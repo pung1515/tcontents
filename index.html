@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>콘텐츠 현황 관리</title>
     
-    <!-- 1. 환경 변수 폴리필 (Recharts 에러 방지용 필수 코드) -->
+    <!-- 1. 환경 변수 폴리필 -->
     <script>
         window.process = { env: { NODE_ENV: 'production' } };
     </script>
@@ -13,14 +13,14 @@
     <!-- 2. Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- 3. React & ReactDOM (Ver 18) -->
+    <!-- 3. React & ReactDOM -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" crossorigin="anonymous"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" crossorigin="anonymous"></script>
     
-    <!-- 4. Prop Types (Recharts 필수 의존성) -->
+    <!-- 4. Prop Types -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prop-types/15.8.1/prop-types.min.js" crossorigin="anonymous"></script>
     
-    <!-- 5. Recharts (안정적인 버전) -->
+    <!-- 5. Recharts -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.12.7/Recharts.min.js" crossorigin="anonymous"></script>
     
     <!-- 6. Babel -->
@@ -44,7 +44,7 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useMemo, useEffect } = React;
+        const { useState, useMemo, useEffect, useCallback } = React;
         
         // Recharts 라이브러리 로드 확인 및 가져오기
         const RechartsObj = window.Recharts;
@@ -140,6 +140,32 @@
             return rows;
         };
 
+        // --- 번호 재정렬 함수 ---
+        // 특정 회사의 데이터만 추출하여, '판매중지'가 아닌 항목들에 대해 1부터 번호를 재부여하고
+        // 판매중지인 항목은 번호를 비운 뒤 전체 데이터에 반영
+        const renumberCompanyData = (allData, companyName) => {
+            // 1. 다른 회사 데이터 분리
+            const otherData = allData.filter(d => d.company !== companyName);
+            // 2. 현재 회사 데이터 가져오기
+            const targetData = allData.filter(d => d.company === companyName);
+            
+            // 3. 현재 회사 데이터 중 '삭제됨'이 아닌 것과 '삭제됨'인 것 분리
+            // (정렬 기준이 필요하다면 여기서 sort 추가 가능. 현재는 입력 순서 유지)
+            let counter = 1;
+            const updatedTargetData = targetData.map(item => {
+                if (item.removed) {
+                    // 판매 중지(삭제됨) 상태라면 번호 제거
+                    return { ...item, no: '' };
+                } else {
+                    // 정상 판매 중이면 번호 부여 후 카운터 증가
+                    return { ...item, no: String(counter++) };
+                }
+            });
+
+            // 4. 합쳐서 반환
+            return [...otherData, ...updatedTargetData];
+        };
+
         // --- 수정 모달 ---
         const EditModal = ({ isOpen, onClose, item, onSave }) => {
             const [formData, setFormData] = useState(item || {});
@@ -162,8 +188,9 @@
             };
 
             return (
-                <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-fadeIn">
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                    {/* 모달 컨테이너에 애니메이션 적용 */}
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-fadeIn relative">
                         <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
                             <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                                 <Icon name="Edit" size={18} className="text-indigo-600" /> 과정 정보 수정
@@ -177,7 +204,14 @@
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-xs font-bold text-slate-500 mb-1">번호</label>
-                                    <input type="text" name="no" value={formData.no || ''} onChange={handleChange} className="w-full p-2 border border-slate-300 rounded text-sm" />
+                                    <input 
+                                        type="text" 
+                                        name="no" 
+                                        value={formData.no || ''} 
+                                        readOnly 
+                                        className="w-full p-2 border border-slate-200 bg-slate-100 text-slate-500 rounded text-sm cursor-not-allowed" 
+                                        title="번호는 자동 관리됩니다"
+                                    />
                                 </div>
                                 <div>
                                     <label className="block text-xs font-bold text-slate-500 mb-1">오픈일 (YYYY.MM)</label>
@@ -206,9 +240,19 @@
                                 <label className="block text-xs font-bold text-slate-500 mb-1">특이사항</label>
                                 <textarea name="remarks" value={formData.remarks || ''} onChange={handleChange} className="w-full p-2 border border-slate-300 rounded text-sm h-20 resize-none"></textarea>
                             </div>
-                            <div className="flex items-center gap-2">
-                                <input type="checkbox" id="removed" name="removed" checked={!!formData.removed} onChange={(e) => setFormData(prev => ({ ...prev, removed: e.target.checked ? '삭제됨' : '' }))} className="rounded text-indigo-600" />
-                                <label htmlFor="removed" className="text-sm text-slate-600">판매 중지(삭제됨) 처리</label>
+                            <div className="bg-slate-50 p-3 rounded border border-slate-200">
+                                <div className="flex items-center gap-2">
+                                    <input 
+                                        type="checkbox" 
+                                        id="removed" 
+                                        name="removed" 
+                                        checked={!!formData.removed} 
+                                        onChange={(e) => setFormData(prev => ({ ...prev, removed: e.target.checked ? '삭제됨' : '' }))} 
+                                        className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500" 
+                                    />
+                                    <label htmlFor="removed" className="text-sm font-bold text-slate-700 cursor-pointer">판매 중지(삭제됨) 처리</label>
+                                </div>
+                                <p className="text-xs text-slate-500 mt-1 ml-6">체크 시 목록 번호에서 제외되고 '삭제됨'으로 표시됩니다.</p>
                             </div>
                         </form>
 
@@ -217,132 +261,6 @@
                             <button onClick={handleSubmit} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-bold shadow-md">저장하기</button>
                         </div>
                     </div>
-                </div>
-            );
-        };
-
-        // --- 검색 결과 컴포넌트 ---
-        const SearchResults = ({ data, searchTerm, companies, onDeleteRow, onUpdateRow }) => {
-            const [editingItem, setEditingItem] = useState(null);
-
-            // 검색어 기반 필터링 및 연수원별 그룹화
-            const searchResults = useMemo(() => {
-                if (!searchTerm) return {};
-                
-                const filtered = data.filter(item => 
-                    item.title.toLowerCase().includes(searchTerm.toLowerCase())
-                );
-
-                const grouped = {};
-                companies.forEach(company => {
-                    const companyItems = filtered.filter(item => item.company === company);
-                    if (companyItems.length > 0) {
-                        grouped[company] = companyItems;
-                    }
-                });
-                return grouped;
-            }, [data, searchTerm, companies]);
-
-            const hasResults = Object.keys(searchResults).length > 0;
-
-            return (
-                <div className="space-y-8 animate-fadeIn pb-10">
-                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                        <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                            <Icon name="Search" size={24} className="text-indigo-600"/>
-                            "{(searchTerm)}" 검색 결과
-                        </h2>
-                        <p className="text-sm text-slate-500 mt-1">
-                            총 {Object.values(searchResults).flat().length}개의 과정이 발견되었습니다.
-                        </p>
-                    </div>
-
-                    {!hasResults ? (
-                        <div className="text-center py-20 bg-white rounded-xl border border-slate-200 border-dashed">
-                            <div className="text-slate-400 mb-2"><Icon name="Search" size={48} className="mx-auto opacity-20"/></div>
-                            <p className="text-slate-500 text-lg">검색 결과가 없습니다.</p>
-                            <p className="text-slate-400 text-sm">다른 키워드로 검색해보세요.</p>
-                        </div>
-                    ) : (
-                        companies.map(company => {
-                            const items = searchResults[company];
-                            if (!items) return null;
-
-                            return (
-                                <div key={company} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                                    <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
-                                        <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
-                                            {company}
-                                            <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold">{items.length}건</span>
-                                        </h3>
-                                    </div>
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full text-sm text-left text-slate-600">
-                                            <thead className="text-xs text-slate-700 uppercase bg-slate-100 border-b border-slate-200">
-                                                <tr>
-                                                    <th className="px-4 py-3 font-semibold w-16">번호</th>
-                                                    <th className="px-4 py-3 font-semibold min-w-[200px]">과정명</th>
-                                                    <th className="px-4 py-3 font-semibold w-20">학점</th>
-                                                    <th className="px-4 py-3 font-semibold w-20">시간</th>
-                                                    <th className="px-4 py-3 font-semibold">분야</th>
-                                                    <th className="px-4 py-3 font-semibold">오픈일</th>
-                                                    <th className="px-4 py-3 font-semibold">상태</th>
-                                                    <th className="px-4 py-3 font-semibold">특이사항</th> 
-                                                    <th className="px-4 py-3 font-semibold text-center w-24">관리</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-slate-200">
-                                                {items.map((row) => (
-                                                    <tr key={row.id} className="hover:bg-slate-50">
-                                                        <td className="px-4 py-3 font-mono text-slate-500">{row.no}</td>
-                                                        <td className="px-4 py-3 font-medium text-slate-900">{row.title}</td>
-                                                        <td className="px-4 py-3">{row.credits}</td>
-                                                        <td className="px-4 py-3">{row.hours}시간</td>
-                                                        <td className="px-4 py-3"><span className="px-2 py-1 rounded-full bg-slate-100 text-slate-600 text-xs">{row.category || '-'}</span></td>
-                                                        <td className="px-4 py-3 text-slate-600">{row.openDate}</td>
-                                                        <td className="px-4 py-3">
-                                                            {row.removed ? 
-                                                                <span className="text-red-500 text-xs font-bold bg-red-50 px-2 py-1 rounded">삭제됨</span> : 
-                                                                <span className="text-emerald-600 text-xs font-bold bg-emerald-50 px-2 py-1 rounded">운영중</span>
-                                                            }
-                                                        </td>
-                                                        <td className="px-4 py-3 max-w-[150px] truncate" title={row.remarks || ''}>
-                                                            {row.remarks || '-'}
-                                                        </td>
-                                                        <td className="px-4 py-3 text-center flex justify-center gap-1">
-                                                            <button 
-                                                                onClick={() => setEditingItem(row)}
-                                                                className="text-slate-400 hover:text-indigo-600 p-1 rounded hover:bg-indigo-50"
-                                                                title="수정"
-                                                            >
-                                                                <Icon name="Edit" size={16} />
-                                                            </button>
-                                                            <button 
-                                                                onClick={() => onDeleteRow(row.id)} 
-                                                                className="text-slate-400 hover:text-red-600 p-1 rounded hover:bg-red-50"
-                                                                title="삭제"
-                                                            >
-                                                                <Icon name="Trash2" size={16} />
-                                                            </button>
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                            );
-                        })
-                    )}
-                    
-                    {/* 검색 결과에서도 수정 모달 사용 */}
-                    <EditModal 
-                        key={editingItem ? editingItem.id : 'search-edit-modal'}
-                        isOpen={!!editingItem} 
-                        item={editingItem} 
-                        onClose={() => setEditingItem(null)} 
-                        onSave={onUpdateRow}
-                    />
                 </div>
             );
         };
@@ -513,8 +431,9 @@
             const newCount = companyData.filter(d => (d.openDate || '').includes(currentMonth)).length;
 
             return (
-                <div className="space-y-6 animate-fadeIn">
-                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-200 pb-4">
+                <div className="space-y-6">
+                    {/* 상단 정보 및 탭 - 애니메이션 적용 */}
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-200 pb-4 animate-fadeIn">
                         <div>
                             <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
                                 {company}
@@ -542,7 +461,7 @@
                     </div>
 
                     {activeTab === 'stats' ? (
-                        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm min-h-[400px]">
+                        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm min-h-[400px] animate-fadeIn">
                             <h3 className="text-lg font-bold text-slate-800 mb-6">월별 신규 과정 오픈 추이</h3>
                             <ResponsiveContainer width="100%" height={350}>
                                 {BarChart ? (
@@ -562,7 +481,8 @@
                             {chartData.length === 0 && <div className="text-center text-slate-400">데이터가 없습니다.</div>}
                         </div>
                     ) : (
-                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                        // 데이터 목록 영역 (애니메이션 분리)
+                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden animate-fadeIn">
                             <div className="p-4 border-b border-slate-200 flex flex-wrap gap-3 justify-end bg-slate-50">
                                 <button
                                     onClick={handleDownloadData}
@@ -651,16 +571,17 @@
                                     </tbody>
                                 </table>
                             </div>
-                            
-                            <EditModal 
-                                key={editingItem ? editingItem.id : 'edit-modal'}
-                                isOpen={!!editingItem} 
-                                item={editingItem} 
-                                onClose={() => setEditingItem(null)} 
-                                onSave={onUpdateRow}
-                            />
                         </div>
                     )}
+                    
+                    {/* 모달은 transform 영향 안 받는 곳으로 이동 */}
+                    <EditModal 
+                        key={editingItem ? editingItem.id : 'edit-modal'}
+                        isOpen={!!editingItem} 
+                        item={editingItem} 
+                        onClose={() => setEditingItem(null)} 
+                        onSave={onUpdateRow}
+                    />
                 </div>
             );
         };
@@ -683,9 +604,9 @@
             };
 
             const [data, setData] = useState([
-                { id: 1, company: '아이스크림', no: 1, title: '이어령의 생활 속 인문학', credits: 2, hours: 30, minutes: 1800, category: '자기계발', openDate: '2023.08', removed: '', remarks: '인기 강좌' },
-                { id: 2, company: '티처빌', no: 1, title: 'AI 디지털 교과서 활용', credits: 1, hours: 15, minutes: 900, category: '에듀테크', openDate: '2023.09', removed: '', remarks: '' },
-                { id: 3, company: '비바샘', no: 1, title: '교실 속 연극 놀이', credits: 2, hours: 30, minutes: 1800, category: '교과지도', openDate: '2023.10', removed: '', remarks: '2학점 추천' },
+                { id: 1, company: '아이스크림', no: '1', title: '이어령의 생활 속 인문학', credits: 2, hours: 30, minutes: 1800, category: '자기계발', openDate: '2023.08', removed: '', remarks: '인기 강좌' },
+                { id: 2, company: '티처빌', no: '1', title: 'AI 디지털 교과서 활용', credits: 1, hours: 15, minutes: 900, category: '에듀테크', openDate: '2023.09', removed: '', remarks: '' },
+                { id: 3, company: '비바샘', no: '1', title: '교실 속 연극 놀이', credits: 2, hours: 30, minutes: 1800, category: '교과지도', openDate: '2023.10', removed: '', remarks: '2학점 추천' },
             ]);
 
             const [importText, setImportText] = useState('');
@@ -706,23 +627,28 @@
                 setSearchTerm('');
             };
 
+            // [수정됨] 삭제 시 번호 재정렬 로직 추가
             const handleDelete = (id) => {
-                if (confirm("정말 이 데이터를 삭제하시겠습니까?")) {
-                    setData(data.filter(item => item.id !== id));
+                if (confirm("정말 이 데이터를 삭제하시겠습니까?\n(삭제 후 번호는 자동 재정렬됩니다)")) {
+                    // 삭제할 아이템 찾기
+                    const itemToDelete = data.find(item => item.id === id);
+                    if (!itemToDelete) return;
+
+                    // 삭제 반영된 임시 데이터 생성
+                    const tempFiltered = data.filter(item => item.id !== id);
+                    
+                    // 해당 회사 데이터 번호 재정렬
+                    const renumbered = renumberCompanyData(tempFiltered, itemToDelete.company);
+                    setData(renumbered);
                 }
             };
 
+            // [수정됨] 직접 입력 추가 시 로직 개선
             const handleAddRow = () => {
-                const companyData = data.filter(d => d.company === selectedCompany);
-                let currentMaxNo = companyData.reduce((max, item) => {
-                    const num = parseInt(item.no, 10);
-                    return !isNaN(num) && num > max ? num : max;
-                }, 0);
-
                 const newRow = {
                     id: Date.now(),
                     company: selectedCompany,
-                    no: String(currentMaxNo + 1),
+                    no: '', // renumber 함수가 처리해줄 것이므로 일단 빈값
                     title: '새 과정', 
                     credits: '', 
                     hours: '', 
@@ -733,11 +659,21 @@
                     removed: '', 
                     remarks: ''
                 };
-                setData([newRow, ...data]);
+                
+                const newData = [...data, newRow];
+                // 추가 후 전체 재정렬 (신규는 맨 뒤로 가므로 번호가 마지막+1이 됨)
+                const renumbered = renumberCompanyData(newData, selectedCompany);
+                setData(renumbered);
             };
 
+            // [수정됨] 수정 시 번호 재정렬 로직 추가 (판매중지 처리 등)
             const handleUpdateRow = (updatedItem) => {
-                setData(prev => prev.map(item => item.id === updatedItem.id ? updatedItem : item));
+                // 일단 데이터 업데이트
+                const updatedData = data.map(item => item.id === updatedItem.id ? updatedItem : item);
+                
+                // 번호 재정렬 수행
+                const renumbered = renumberCompanyData(updatedData, updatedItem.company);
+                setData(renumbered);
             };
 
             const handleFileUpload = (event) => {
@@ -787,36 +723,37 @@
                     });
 
                     if (uploadedItems.length > 0) {
-                        setData(prevData => {
-                            const currentCompanyData = prevData.filter(d => d.company === selectedCompany);
-                            const otherCompanyData = prevData.filter(d => d.company !== selectedCompany);
-                            const dataMap = new Map();
-                            currentCompanyData.forEach(item => {
-                                const key = item.title.replace(/\s/g, '');
-                                dataMap.set(key, item);
-                            });
-                            uploadedItems.forEach(newItem => {
-                                const key = newItem.title.replace(/\s/g, '');
-                                if (dataMap.has(key)) {
-                                    const existingItem = dataMap.get(key);
-                                    const mergedItem = {
-                                        ...existingItem,
-                                        no: newItem.no || existingItem.no,
-                                        credits: newItem.credits || existingItem.credits,
-                                        hours: newItem.hours || existingItem.hours,
-                                        category: newItem.category || existingItem.category,
-                                        openDate: newItem.openDate || existingItem.openDate,
-                                        removed: newItem.removed || existingItem.removed,
-                                        remarks: newItem.remarks || existingItem.remarks
-                                    };
-                                    dataMap.set(key, mergedItem);
-                                } else {
-                                    const newId = Date.now() + Math.random();
-                                    dataMap.set(key, { ...newItem, id: newId });
-                                }
-                            });
-                            return [...otherCompanyData, ...Array.from(dataMap.values())];
+                        // 1. 기존 데이터 + 업로드 데이터 병합
+                        const currentCompanyData = data.filter(d => d.company === selectedCompany);
+                        const otherCompanyData = data.filter(d => d.company !== selectedCompany);
+                        
+                        const dataMap = new Map();
+                        currentCompanyData.forEach(item => {
+                            const key = item.title.replace(/\s/g, '');
+                            dataMap.set(key, item);
                         });
+
+                        uploadedItems.forEach(newItem => {
+                            const key = newItem.title.replace(/\s/g, '');
+                            if (dataMap.has(key)) {
+                                const existingItem = dataMap.get(key);
+                                const mergedItem = { ...existingItem, ...newItem }; // 덮어쓰기
+                                dataMap.set(key, mergedItem);
+                            } else {
+                                const newId = Date.now() + Math.random();
+                                dataMap.set(key, { ...newItem, id: newId });
+                            }
+                        });
+
+                        // 2. 병합된 데이터에 대해 번호 재정렬
+                        const mergedCompanyData = Array.from(dataMap.values());
+                        
+                        // 현재 회사 데이터만 재정렬을 위해 임시 배열 구성
+                        // (renumberCompanyData 함수 재사용을 위해 전체 구조 생성)
+                        const allTempData = [...otherCompanyData, ...mergedCompanyData];
+                        const finalData = renumberCompanyData(allTempData, selectedCompany);
+
+                        setData(finalData);
                         alert(`처리 완료! ${uploadedItems.length}건을 확인했습니다.`);
                     } else {
                         alert('데이터 인식 실패. 헤더("번호","과정명")가 있는지 확인해주세요.');
@@ -845,18 +782,13 @@
                 setAnalysisResult({ total: lines.length, new: unique.length, dup: duplicates.length, ignored });
             };
 
+            // [수정됨] 웹 추출 추가 시 번호 재정렬
             const handleAddDetected = () => {
                 const toAdd = detectedNewCourses.filter(c => c.checked);
-                const companyData = data.filter(d => d.company === selectedCompany);
-                let currentMaxNo = companyData.reduce((max, item) => {
-                    const num = parseInt(item.no, 10);
-                    return !isNaN(num) && num > max ? num : max;
-                }, 0);
-
                 const newRows = toAdd.map((item, index) => ({
                     id: Date.now() + Math.random() + index,
                     company: selectedCompany,
-                    no: String(currentMaxNo + 1 + index),
+                    no: '',
                     title: item.title, 
                     credits: '', 
                     hours: '', 
@@ -867,7 +799,11 @@
                     removed: '', 
                     remarks: '웹 추출'
                 }));
-                setData(prev => [...prev, ...newRows]);
+                
+                const newData = [...data, ...newRows];
+                const renumbered = renumberCompanyData(newData, selectedCompany);
+                setData(renumbered);
+                
                 setShowImportModal(false);
                 setImportText('');
                 setDetectedNewCourses([]);
@@ -973,7 +909,7 @@
                     </div>
 
                     {showImportModal && (
-                        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
                             <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col">
                                 <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-xl">
                                     <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Icon name="ExternalLink" size={20} className="text-indigo-600" /> 웹사이트 신규 과정 추출 ({selectedCompany})</h3>
