@@ -180,7 +180,7 @@
                                 </div>
                                 <div>
                                     <label className="block text-xs font-bold text-slate-500 mb-1">오픈일 (YYYY.MM)</label>
-                                    <input type="text" name="openDate" value={formData.openDate || ''} onChange={handleChange} className="w-full p-2 border border-slate-300 rounded text-sm" />
+                                    <input type="text" name="openDate" value={formData.openDate || ''} onChange={handleChange} placeholder="입력하지 않으면 공란" className="w-full p-2 border border-slate-300 rounded text-sm" />
                                 </div>
                             </div>
                             <div>
@@ -583,11 +583,26 @@
             };
 
             const handleAddRow = () => {
+                // 현재 회사의 가장 큰 번호 찾기
+                const companyData = data.filter(d => d.company === selectedCompany);
+                let currentMaxNo = companyData.reduce((max, item) => {
+                    const num = parseInt(item.no, 10);
+                    return !isNaN(num) && num > max ? num : max;
+                }, 0);
+
                 const newRow = {
                     id: Date.now(),
                     company: selectedCompany,
-                    no: '', title: '새 과정', credits: '', hours: '', minutes: '', category: '', certification: '',
-                    openDate: new Date().toISOString().slice(0, 7).replace('-', '.'), removed: '', remarks: ''
+                    no: String(currentMaxNo + 1), // 다음 번호 부여
+                    title: '새 과정', 
+                    credits: '', 
+                    hours: '', 
+                    minutes: '', 
+                    category: '', 
+                    certification: '',
+                    openDate: '',  // 기본값 공란
+                    removed: '', 
+                    remarks: ''
                 };
                 setData([newRow, ...data]);
             };
@@ -703,11 +718,27 @@
 
             const handleAddDetected = () => {
                 const toAdd = detectedNewCourses.filter(c => c.checked);
-                const newRows = toAdd.map(item => ({
-                    id: Date.now() + Math.random(),
+                
+                // 현재 회사의 가장 큰 번호 찾기
+                const companyData = data.filter(d => d.company === selectedCompany);
+                let currentMaxNo = companyData.reduce((max, item) => {
+                    const num = parseInt(item.no, 10);
+                    return !isNaN(num) && num > max ? num : max;
+                }, 0);
+
+                const newRows = toAdd.map((item, index) => ({
+                    id: Date.now() + Math.random() + index,
                     company: selectedCompany,
-                    no: '', title: item.title, credits: '', hours: '', category: '미분류',
-                    openDate: new Date().toISOString().slice(0, 7).replace('-', '.'), removed: '', remarks: '웹 추출'
+                    no: String(currentMaxNo + 1 + index), // 순차적으로 번호 부여
+                    title: item.title, 
+                    credits: '', 
+                    hours: '', 
+                    minutes: '', 
+                    category: '미분류',
+                    certification: '',
+                    openDate: '', // 기본값 공란
+                    removed: '', 
+                    remarks: '웹 추출'
                 }));
                 setData(prev => [...prev, ...newRows]);
                 setShowImportModal(false);
@@ -740,7 +771,7 @@
                                 </button>
                             ))}
                         </nav>
-                        <div className="p-4 border-t border-slate-800 text-xs text-slate-500 text-center">© 2024 Contents Manager</div>
+                        <div className="p-4 border-t border-slate-800 text-xs text-slate-500 text-center">© 2025 vivasam</div>
                     </aside>
 
                     <div className="flex-1 flex flex-col min-w-0">
