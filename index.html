@@ -142,7 +142,7 @@
             const stats = useMemo(() => companies.map(c => ({ name: c, total: data.filter(d => d.company === c).length, new: data.filter(d => d.company === c && (d.openDate||'').includes(currentMonth)).length })), [data, companies, currentMonth]);
             const totalCourses = stats.reduce((acc, curr) => acc + curr.total, 0);
             const totalNew = stats.reduce((acc, curr) => acc + curr.new, 0);
-            if (!BarChart) return <div className="p-10 text-center text-slate-400">차트 라이브러리 로딩 중...</div>;
+            if (!BarChart) return <div>Chart Load Error</div>;
             return (
                 <div className="space-y-6 animate-fadeIn">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -287,7 +287,12 @@
             const [syncError, setSyncError] = useState(false); // 연동 상태 에러 플래그
 
             const companies = ['비바샘', '티처빌', '아이스크림', '티셀파', '한교원', '사제동행', '창비'];
-            const companyUrls = { '비바샘': 'https://vivasam.com', '티처빌': 'https://www.teacherville.co.kr' };
+            const companyUrls = {
+                '비바샘': 'https://t.vivasam.com/mdvs/menu01',
+                '티처빌': 'https://www.teacherville.co.kr/trainapply/allCourseList.edu',
+                '아이스크림': 'https://teacher.i-scream.co.kr/course/crs/creditList.do?searchOrdinalTyCode=TY01&searchOrderField=NEW',
+                '티셀파': 'http://www.tsherpa.co.kr'
+            };
 
             useEffect(() => {
                 const localData = localStorage.getItem('courseData');
@@ -313,7 +318,8 @@
                     
                     const res = await fetch(targetUrl + cacheBuster, { 
                         method: 'GET',
-                        // redirect: 'follow'는 브라우저 기본 동작이지만 명시
+                        redirect: 'follow',
+                        credentials: 'omit' // 인증 정보 제외 (공개 스크립트 접근 시 권장)
                     });
                     
                     if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
@@ -445,7 +451,7 @@
             };
             const handleAddDetected = () => {
                 const newItems = detectedNewCourses.filter(c => c.checked).map((c, i) => ({
-                    id: Date.now() + i, company: selectedCompany, title: c.title, openDate: '', removed: '', no: ''
+                    id: Date.now() + i, company: selectedCompany, title: c.title, openDate: '', removed: '', no: '', remarks: '웹 추출'
                 }));
                 const newData = [...data, ...newItems];
                 const renumbered = renumberCompanyData(newData, selectedCompany);
@@ -486,7 +492,13 @@
                         <main className="p-8">
                             {searchTerm ? <SearchResults data={data} searchTerm={searchTerm} companies={companies} onDeleteRow={handleDelete} onUpdateRow={handleUpdateRow}/> : 
                              currentView === 'dashboard' ? <MainDashboard data={data} companies={companies} onCompanyClick={(c) => {setSelectedCompany(c); setCurrentView('company');}}/> : 
-                             <CompanyDetail company={selectedCompany} data={data} setData={setData} onAddRow={handleAddRow} onDeleteRow={handleDelete} onUpdateRow={handleUpdateRow} onFileUpload={handleFileUpload} onWebImport={() => setShowImportModal(true)}/>}
+                             <CompanyDetail company={selectedCompany} data={data} setData={setData} onAddRow={handleAddRow} onDeleteRow={handleDelete} onUpdateRow={handleUpdateRow} onFileUpload={handleFileUpload} onWebImport={() => {
+                                 // 모달 열 때 상태 초기화
+                                 setImportText('');
+                                 setDetectedNewCourses([]);
+                                 setAnalysisResult(null);
+                                 setShowImportModal(true);
+                             }}/>}
                         </main>
                     </div>
                     {/* 모달들 */}
@@ -501,6 +513,11 @@
                                 </div>
                                 <textarea className="w-full h-32 border rounded p-2 text-sm" value={importText} onChange={e => setImportText(e.target.value)} placeholder="붙여넣기..."></textarea>
                                 <div className="flex gap-2"><button onClick={analyzeImportText} className="px-4 py-2 bg-slate-800 text-white rounded text-sm">분석하기</button></div>
+                                {analysisResult && (
+                                    <div className="text-xs text-slate-500 bg-slate-50 p-2 rounded">
+                                        총 {analysisResult.total}줄 / 신규 {analysisResult.new}건 / 중복 {analysisResult.dup}건 / 제외 {analysisResult.ignored}건
+                                    </div>
+                                )}
                                 {detectedNewCourses.length > 0 && <div className="max-h-40 overflow-auto border p-2 text-sm">{detectedNewCourses.map((c, i) => <div key={i}><input type="checkbox" checked={c.checked} onChange={() => {const n = [...detectedNewCourses]; n[i].checked = !n[i].checked; setDetectedNewCourses(n);}}/> {c.title}</div>)}</div>}
                                 <div className="flex justify-end gap-2"><button onClick={() => setShowImportModal(false)} className="px-4 py-2 border rounded text-sm">취소</button><button onClick={handleAddDetected} className="px-4 py-2 bg-indigo-600 text-white rounded text-sm">추가하기</button></div>
                             </div>
