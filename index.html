@@ -5,26 +5,32 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>콘텐츠 현황 관리</title>
     
-    <!-- Tailwind CSS -->
+    <!-- 1. 환경 변수 폴리필 (Recharts 에러 방지용 필수 코드) -->
+    <script>
+        window.process = { env: { NODE_ENV: 'production' } };
+    </script>
+
+    <!-- 2. Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- React & ReactDOM (Ver 18.2.0) -->
-    <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js" crossorigin></script>
-    <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js" crossorigin></script>
+    <!-- 3. React & ReactDOM (Ver 18) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" crossorigin="anonymous"></script>
     
-    <!-- Babel (for JSX) -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- 4. Prop Types (Recharts 필수 의존성 - 'oneOfType' 에러 해결) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prop-types/15.8.1/prop-types.min.js" crossorigin="anonymous"></script>
     
-    <!-- Recharts (Ver 2.12.7 - Stable) -->
-    <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.min.js"></script>
+    <!-- 5. Recharts (안정적인 버전) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.12.7/Recharts.min.js" crossorigin="anonymous"></script>
+    
+    <!-- 6. Babel -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
 
-    <!-- Lucide Icons Style -->
     <style>
         .icon {
             display: inline-block;
             vertical-align: middle;
         }
-        /* 페이드인 애니메이션 */
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
@@ -40,12 +46,13 @@
     <script type="text/babel">
         const { useState, useMemo, useEffect } = React;
         
-        // Recharts 객체 안전하게 가져오기
+        // Recharts 라이브러리 로드 확인 및 가져오기
+        const RechartsObj = window.Recharts;
         const { 
             BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList 
-        } = window.Recharts || Recharts;
+        } = RechartsObj || {};
 
-        // --- 아이콘 컴포넌트 (Lucide Icons SVG 매핑) ---
+        // --- 아이콘 컴포넌트 ---
         const Icon = ({ name, size = 20, className = "" }) => {
             const icons = {
                 Upload: <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>,
@@ -82,7 +89,7 @@
             );
         };
 
-        // --- 유틸리티: 스마트 CSV 파서 ---
+        // --- CSV 파서 ---
         const parseCSV = (text) => {
             const rows = [];
             let currentRow = [];
@@ -132,7 +139,7 @@
             return rows;
         };
 
-        // --- 컴포넌트: 수정 모달 ---
+        // --- 수정 모달 ---
         const EditModal = ({ isOpen, onClose, item, onSave }) => {
             const [formData, setFormData] = useState(item || {});
 
@@ -213,7 +220,7 @@
             );
         };
 
-        // --- 컴포넌트: 종합 대시보드 ---
+        // --- 메인 대시보드 ---
         const MainDashboard = ({ data, companies, onCompanyClick }) => {
             const currentMonth = new Date().toISOString().slice(0, 7).replace('-', '.');
 
@@ -231,6 +238,16 @@
 
             const totalCourses = stats.reduce((acc, curr) => acc + curr.total, 0);
             const totalNew = stats.reduce((acc, curr) => acc + curr.new, 0);
+
+            // 차트 라이브러리 로드 실패 시 에러 메시지
+            if (!BarChart) {
+                return (
+                    <div className="p-10 text-center">
+                        <div className="text-red-500 font-bold mb-2">차트 라이브러리를 불러오지 못했습니다.</div>
+                        <div className="text-sm text-slate-500">인터넷 연결을 확인하거나 페이지를 새로고침해주세요.</div>
+                    </div>
+                );
+            }
 
             return (
                 <div className="space-y-6 animate-fadeIn">
@@ -283,6 +300,7 @@
                                             {stats.map((entry, index) => (
                                                 <Cell key={`cell-${index}`} fill={['#3B82F6', '#10B981', '#6366F1', '#F59E0B', '#EC4899', '#8B5CF6', '#14B8A6'][index % 7]} />
                                             ))}
+                                            {/* 항상 숫자 표시 (오른쪽) */}
                                             <LabelList dataKey="total" position="right" style={{ fontSize: '12px', fill: '#64748B', fontWeight: 'bold' }} />
                                         </Bar>
                                     </BarChart>
@@ -300,6 +318,7 @@
                                         <YAxis allowDecimals={false} />
                                         <Tooltip cursor={{fill: '#F8FAFC'}} contentStyle={{borderRadius: '8px', border:'none', boxShadow:'0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
                                         <Bar dataKey="new" name="신규 과정" fill="#6366F1" radius={[4, 4, 0, 0]} barSize={30} onClick={(data) => onCompanyClick(data.name)}>
+                                            {/* 항상 숫자 표시 (위쪽) */}
                                             <LabelList dataKey="new" position="top" style={{ fontSize: '12px', fill: '#6366F1', fontWeight: 'bold' }} />
                                         </Bar>
                                     </BarChart>
@@ -311,7 +330,7 @@
             );
         };
 
-        // --- 컴포넌트: 개별 회사 상세 페이지 ---
+        // --- 회사 상세 페이지 ---
         const CompanyDetail = ({ 
             company, data, setData, 
             onAddRow, onDeleteRow, onUpdateRow,
@@ -400,15 +419,19 @@
                         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm min-h-[400px]">
                             <h3 className="text-lg font-bold text-slate-800 mb-6">월별 신규 과정 오픈 추이</h3>
                             <ResponsiveContainer width="100%" height={350}>
-                                <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
-                                    <XAxis dataKey="name" tick={{fill: '#64748B', fontSize: 12}} axisLine={false} tickLine={false} />
-                                    <YAxis tick={{fill: '#64748B', fontSize: 12}} axisLine={false} tickLine={false} />
-                                    <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} cursor={{fill: '#F1F5F9'}} />
-                                    <Bar dataKey="count" name="과정 수" fill="#3B82F6" radius={[4, 4, 0, 0]} barSize={40}>
-                                        <LabelList dataKey="count" position="top" style={{ fontSize: '12px', fill: '#3B82F6', fontWeight: 'bold' }} />
-                                    </Bar>
-                                </BarChart>
+                                {BarChart ? (
+                                    <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
+                                        <XAxis dataKey="name" tick={{fill: '#64748B', fontSize: 12}} axisLine={false} tickLine={false} />
+                                        <YAxis tick={{fill: '#64748B', fontSize: 12}} axisLine={false} tickLine={false} />
+                                        <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} cursor={{fill: '#F1F5F9'}} />
+                                        <Bar dataKey="count" name="과정 수" fill="#3B82F6" radius={[4, 4, 0, 0]} barSize={40}>
+                                            <LabelList dataKey="count" position="top" style={{ fontSize: '12px', fill: '#3B82F6', fontWeight: 'bold' }} />
+                                        </Bar>
+                                    </BarChart>
+                                ) : (
+                                    <div className="flex h-full items-center justify-center text-slate-400">차트 로딩 중...</div>
+                                )}
                             </ResponsiveContainer>
                             {chartData.length === 0 && <div className="text-center text-slate-400">데이터가 없습니다.</div>}
                         </div>
@@ -573,7 +596,6 @@
                 setData(prev => prev.map(item => item.id === updatedItem.id ? updatedItem : item));
             };
 
-            // CSV 로직 생략 (동일)
             const handleFileUpload = (event) => {
                 const file = event.target.files[0];
                 if (!file) return;
