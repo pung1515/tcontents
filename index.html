@@ -1,0 +1,803 @@
+import React, { useState, useMemo, useEffect } from 'react';
+import { 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList
+} from 'recharts';
+import { 
+  Upload, Plus, Trash2, FileText, LayoutDashboard, 
+  ExternalLink, X, AlertCircle,
+  Menu, Home, Building2, Download, Edit, Save
+} from 'lucide-react';
+
+// --- 유틸리티: 스마트 CSV 파서 ---
+const parseCSV = (text) => {
+  const rows = [];
+  let currentRow = [];
+  let currentCell = '';
+  let inQuotes = false;
+
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    const nextChar = text[i + 1];
+
+    if (inQuotes) {
+      if (char === '"' && nextChar === '"') {
+        currentCell += '"';
+        i++;
+      } else if (char === '"') {
+        inQuotes = false;
+      } else {
+        currentCell += char;
+      }
+    } else {
+      if (char === '"') {
+        inQuotes = true;
+      } else if (char === ',') {
+        currentRow.push(currentCell.trim());
+        currentCell = '';
+      } else if (char === '\n' || char === '\r') {
+        if (char === '\r' && nextChar === '\n') i++;
+        currentRow.push(currentCell.trim());
+        if (currentRow.length > 0 && currentRow.some(c => c !== '')) {
+           rows.push(currentRow);
+        }
+        currentRow = [];
+        currentCell = '';
+      } else {
+        currentCell += char;
+      }
+    }
+  }
+  if (currentCell || currentRow.length > 0) {
+    currentRow.push(currentCell.trim());
+    if (currentRow.length > 0 && currentRow.some(c => c !== '')) {
+      rows.push(currentRow);
+    }
+  }
+  return rows;
+};
+
+// --- 컴포넌트: 수정 모달 ---
+const EditModal = ({ isOpen, onClose, item, onSave }) => {
+  const [formData, setFormData] = useState(item || {});
+
+  useEffect(() => {
+    setFormData(item || {});
+  }, [item]);
+
+  if (!isOpen || !item) return null;
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSave(formData);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fadeIn">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden">
+        <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+          <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+            <Edit size={18} className="text-indigo-600" /> 과정 정보 수정
+          </h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
+            <X size={24} />
+          </button>
+        </div>
+        
+        <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1">번호</label>
+              <input type="text" name="no" value={formData.no || ''} onChange={handleChange} className="w-full p-2 border border-slate-300 rounded text-sm" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1">오픈일 (YYYY.MM)</label>
+              <input type="text" name="openDate" value={formData.openDate || ''} onChange={handleChange} className="w-full p-2 border border-slate-300 rounded text-sm" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-500 mb-1">과정명</label>
+            <input type="text" name="title" value={formData.title || ''} onChange={handleChange} className="w-full p-2 border border-slate-300 rounded text-sm font-medium" />
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1">학점</label>
+              <input type="text" name="credits" value={formData.credits || ''} onChange={handleChange} className="w-full p-2 border border-slate-300 rounded text-sm" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1">시간</label>
+              <input type="text" name="hours" value={formData.hours || ''} onChange={handleChange} className="w-full p-2 border border-slate-300 rounded text-sm" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1">분야</label>
+              <input type="text" name="category" value={formData.category || ''} onChange={handleChange} className="w-full p-2 border border-slate-300 rounded text-sm" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-500 mb-1">특이사항</label>
+            <textarea name="remarks" value={formData.remarks || ''} onChange={handleChange} className="w-full p-2 border border-slate-300 rounded text-sm h-20 resize-none" />
+          </div>
+          <div className="flex items-center gap-2">
+            <input type="checkbox" id="removed" name="removed" checked={!!formData.removed} onChange={(e) => setFormData(prev => ({ ...prev, removed: e.target.checked ? '삭제됨' : '' }))} className="rounded text-indigo-600" />
+            <label htmlFor="removed" className="text-sm text-slate-600">판매 중지(삭제됨) 처리</label>
+          </div>
+        </form>
+
+        <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-2 text-slate-500 hover:bg-slate-200 rounded-lg text-sm font-bold">취소</button>
+          <button onClick={handleSubmit} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-bold shadow-md">저장하기</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- 컴포넌트: 종합 대시보드 (메인 화면) ---
+const MainDashboard = ({ data, companies, onCompanyClick }) => {
+  const currentMonth = new Date().toISOString().slice(0, 7).replace('-', '.');
+
+  const stats = useMemo(() => {
+    return companies.map(company => {
+      const companyData = data.filter(d => d.company === company);
+      const newCount = companyData.filter(d => (d.openDate || '').includes(currentMonth)).length;
+      return {
+        name: company,
+        total: companyData.length,
+        new: newCount
+      };
+    });
+  }, [data, companies, currentMonth]);
+
+  const totalCourses = stats.reduce((acc, curr) => acc + curr.total, 0);
+  const totalNew = stats.reduce((acc, curr) => acc + curr.new, 0);
+
+  return (
+    <div className="space-y-6 animate-fadeIn">
+      <div className="flex flex-col gap-2">
+        <h2 className="text-2xl font-bold text-slate-800">전체 현황 대시보드</h2>
+        <p className="text-slate-500 text-sm">7개 경쟁사의 콘텐츠 현황을 한눈에 확인하세요.</p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-slate-500">총 관리 업체</p>
+            <p className="text-3xl font-bold text-slate-800 mt-1">{companies.length}개</p>
+          </div>
+          <div className="p-3 bg-blue-50 text-blue-600 rounded-full">
+            <Building2 size={24} />
+          </div>
+        </div>
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-slate-500">전체 콘텐츠 수</p>
+            <p className="text-3xl font-bold text-slate-800 mt-1">{totalCourses}개</p>
+          </div>
+          <div className="p-3 bg-emerald-50 text-emerald-600 rounded-full">
+            <FileText size={24} />
+          </div>
+        </div>
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-slate-500">이번 달 신규 ({currentMonth})</p>
+            <p className="text-3xl font-bold text-indigo-600 mt-1">{totalNew}개</p>
+          </div>
+          <div className="p-3 bg-indigo-50 text-indigo-600 rounded-full">
+            <Plus size={24} />
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+          <h3 className="text-lg font-bold text-slate-800 mb-6">업체별 콘텐츠 보유 현황</h3>
+          <div className="h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={stats} layout="vertical" margin={{ top: 5, right: 30, left: 40, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
+                <XAxis type="number" hide />
+                <YAxis dataKey="name" type="category" width={80} tick={{ fontSize: 12 }} />
+                <Tooltip cursor={{fill: '#F8FAFC'}} contentStyle={{borderRadius: '8px', border:'none', boxShadow:'0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
+                <Bar dataKey="total" name="총 과정 수" fill="#3B82F6" radius={[0, 4, 4, 0]} barSize={20} onClick={(data) => onCompanyClick(data.name)}>
+                  {stats.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={['#3B82F6', '#10B981', '#6366F1', '#F59E0B', '#EC4899', '#8B5CF6', '#14B8A6'][index % 7]} />
+                  ))}
+                  {/* 요청사항: 마우스 오버 없이 숫자 표시 (오른쪽) */}
+                  <LabelList dataKey="total" position="right" style={{ fontSize: '12px', fill: '#64748B', fontWeight: 'bold' }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+          <h3 className="text-lg font-bold text-slate-800 mb-6">이번 달 신규 과정 ({currentMonth})</h3>
+           <div className="h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={stats} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} />
+                <YAxis allowDecimals={false} />
+                <Tooltip cursor={{fill: '#F8FAFC'}} contentStyle={{borderRadius: '8px', border:'none', boxShadow:'0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
+                <Bar dataKey="new" name="신규 과정" fill="#6366F1" radius={[4, 4, 0, 0]} barSize={30} onClick={(data) => onCompanyClick(data.name)}>
+                  {/* 요청사항: 마우스 오버 없이 숫자 표시 (위쪽) */}
+                  <LabelList dataKey="new" position="top" style={{ fontSize: '12px', fill: '#6366F1', fontWeight: 'bold' }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- 컴포넌트: 개별 회사 상세 페이지 ---
+const CompanyDetail = ({ 
+  company, data, setData, 
+  onAddRow, onDeleteRow, onUpdateRow,
+  onFileUpload, onWebImport 
+}) => {
+  const [activeTab, setActiveTab] = useState('list'); 
+  const [editingItem, setEditingItem] = useState(null); // 수정할 아이템 상태
+
+  const handleDownloadData = () => {
+    const companyData = data.filter(d => d.company === company);
+    const headers = ['번호', '과정명', '학점', '시간', '분', '연수분야', '자격증', '신규오픈날짜', '사라진 과정', '특이사항'];
+    const csvRows = companyData.map(row => {
+      const safe = (val) => {
+        const str = String(val || '');
+        return str.includes(',') || str.includes('\n') ? `"${str}"` : str;
+      };
+      return [
+        safe(row.no), safe(row.title), safe(row.credits), safe(row.hours),
+        safe(row.minutes || (row.hours * 60)), safe(row.category), safe(row.certification),
+        safe(row.openDate), safe(row.removed), safe(row.remarks)
+      ].join(',');
+    });
+    const csvContent = '\uFEFF' + headers.join(',') + '\n' + csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${company}_데이터_현황_${new Date().toISOString().slice(0,10)}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const chartData = useMemo(() => {
+    const filtered = data.filter(d => d.company === company);
+    const stats = {};
+    filtered.forEach(item => {
+      let dateKey = item.openDate || '날짜 미상';
+      if (dateKey.includes('이전')) dateKey = '과거';
+      else {
+        const match = dateKey.match(/(\d{4})[\.\-](\d{2})/);
+        if (match) dateKey = `${match[1]}.${match[2]}`;
+        else if (dateKey.length >= 4 && !isNaN(dateKey)) dateKey = dateKey.substring(0, 4);
+      }
+      if (!stats[dateKey]) stats[dateKey] = 0;
+      stats[dateKey] += 1;
+    });
+    return Object.keys(stats).sort().map(key => ({ name: key, count: stats[key] }));
+  }, [data, company]);
+
+  const companyData = data.filter(d => d.company === company);
+  const currentMonth = new Date().toISOString().slice(0, 7).replace('-', '.');
+  const newCount = companyData.filter(d => (d.openDate || '').includes(currentMonth)).length;
+
+  return (
+    <div className="space-y-6 animate-fadeIn">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-200 pb-4">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+            {company}
+            <span className="text-sm font-normal text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+              총 {companyData.length}개
+            </span>
+          </h2>
+          <p className="text-sm text-slate-500 mt-1">이번 달 신규: <span className="text-indigo-600 font-bold">{newCount}개</span></p>
+        </div>
+        
+        <div className="flex bg-slate-100 p-1 rounded-lg">
+          <button 
+            onClick={() => setActiveTab('list')}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'list' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            데이터 목록
+          </button>
+          <button 
+            onClick={() => setActiveTab('stats')}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'stats' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            통계 / 차트
+          </button>
+        </div>
+      </div>
+
+      {activeTab === 'stats' ? (
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm min-h-[400px]">
+          <h3 className="text-lg font-bold text-slate-800 mb-6">월별 신규 과정 오픈 추이</h3>
+          <ResponsiveContainer width="100%" height={350}>
+            <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
+              <XAxis dataKey="name" tick={{fill: '#64748B', fontSize: 12}} axisLine={false} tickLine={false} />
+              <YAxis tick={{fill: '#64748B', fontSize: 12}} axisLine={false} tickLine={false} />
+              <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} cursor={{fill: '#F1F5F9'}} />
+              <Bar dataKey="count" name="과정 수" fill="#3B82F6" radius={[4, 4, 0, 0]} barSize={40}>
+                {/* 요청사항: 차트에 숫자 표시 */}
+                <LabelList dataKey="count" position="top" style={{ fontSize: '12px', fill: '#3B82F6', fontWeight: 'bold' }} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+          {chartData.length === 0 && <div className="text-center text-slate-400">데이터가 없습니다.</div>}
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="p-4 border-b border-slate-200 flex flex-wrap gap-3 justify-end bg-slate-50">
+             <button
+                onClick={handleDownloadData}
+                className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-300 text-slate-700 rounded-md hover:bg-slate-50 hover:text-blue-600 hover:border-blue-300 transition-colors text-sm font-medium shadow-sm mr-auto sm:mr-0"
+             >
+                <Download size={16} /> 데이터 내려받기 (Excel)
+             </button>
+
+             <button
+                onClick={onWebImport}
+                className="flex items-center gap-2 px-3 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors text-sm font-medium shadow-sm"
+            >
+              <ExternalLink size={16} /> 신규 과정 찾기 (웹)
+            </button>
+            <label className="flex items-center gap-2 px-3 py-2 bg-emerald-600 text-white rounded-md cursor-pointer hover:bg-emerald-700 transition-colors text-sm font-medium shadow-sm">
+              <Upload size={16} />
+              <span>CSV 불러오기(편집반영)</span>
+              <input type="file" accept=".csv,.xlsx" className="hidden" onChange={onFileUpload} />
+            </label>
+            <button 
+              onClick={onAddRow}
+              className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-300 text-slate-600 rounded-md hover:bg-slate-50 transition-colors text-sm font-medium"
+            >
+              <Plus size={16} /> 직접 입력
+            </button>
+          </div>
+          
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left text-slate-600">
+              <thead className="text-xs text-slate-700 uppercase bg-slate-100 border-b border-slate-200">
+                <tr>
+                  <th className="px-4 py-3 font-semibold">번호</th>
+                  <th className="px-4 py-3 font-semibold min-w-[200px]">과정명</th>
+                  <th className="px-4 py-3 font-semibold">학점</th>
+                  <th className="px-4 py-3 font-semibold">시간</th>
+                  <th className="px-4 py-3 font-semibold">분야</th>
+                  <th className="px-4 py-3 font-semibold">오픈일</th>
+                  <th className="px-4 py-3 font-semibold">상태</th>
+                  <th className="px-4 py-3 font-semibold">특이사항</th> 
+                  <th className="px-4 py-3 font-semibold text-center">관리</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {companyData.map((row) => (
+                  <tr key={row.id} className="hover:bg-slate-50">
+                    <td className="px-4 py-3 font-mono text-slate-500">{row.no}</td>
+                    <td className="px-4 py-3 font-medium text-slate-900">{row.title}</td>
+                    <td className="px-4 py-3">{row.credits}</td>
+                    <td className="px-4 py-3">{row.hours}시간</td>
+                    <td className="px-4 py-3"><span className="px-2 py-1 rounded-full bg-slate-100 text-slate-600 text-xs">{row.category || '-'}</span></td>
+                    <td className="px-4 py-3 text-slate-600">{row.openDate}</td>
+                    <td className="px-4 py-3">
+                      {row.removed ? 
+                        <span className="text-red-500 text-xs font-bold bg-red-50 px-2 py-1 rounded">삭제됨</span> : 
+                        <span className="text-emerald-600 text-xs font-bold bg-emerald-50 px-2 py-1 rounded">운영중</span>
+                      }
+                    </td>
+                    <td className="px-4 py-3 max-w-[150px] truncate" title={row.remarks || ''}>
+                      {row.remarks || '-'}
+                    </td>
+                    <td className="px-4 py-3 text-center flex justify-center gap-1">
+                      {/* 수정 버튼 */}
+                      <button 
+                        onClick={() => setEditingItem(row)}
+                        className="text-slate-400 hover:text-indigo-600 p-1 rounded hover:bg-indigo-50"
+                        title="수정"
+                      >
+                        <Edit size={16} />
+                      </button>
+                      {/* 삭제 버튼 */}
+                      <button 
+                        onClick={() => onDeleteRow(row.id)} 
+                        className="text-slate-400 hover:text-red-600 p-1 rounded hover:bg-red-50"
+                        title="삭제"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {companyData.length === 0 && (
+                  <tr>
+                    <td colSpan="9" className="px-6 py-12 text-center text-slate-400 bg-slate-50">
+                      데이터가 없습니다. CSV를 불러오거나 신규 과정을 등록해보세요.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          
+          {/* 수정 모달 렌더링 */}
+          <EditModal 
+            isOpen={!!editingItem} 
+            item={editingItem} 
+            onClose={() => setEditingItem(null)} 
+            onSave={onUpdateRow}
+          />
+        </div>
+      )}
+    </div>
+  );
+};
+
+// --- 컴포넌트: 메인 앱 ---
+export default function App() {
+  const [currentView, setCurrentView] = useState('dashboard');
+  const [selectedCompany, setSelectedCompany] = useState('');
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [encoding, setEncoding] = useState('EUC-KR');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  const companies = [
+    '비바샘', '티처빌', '아이스크림', '티셀파', '한교원', '사제동행', '창비'
+  ];
+
+  const companyUrls = {
+    '비바샘': 'https://vivasam.com',
+    '티처빌': 'https://www.teacherville.co.kr/',
+    '아이스크림': 'https://teacher.i-scream.co.kr/course/crs/creditList.do?searchOrdinalTyCode=TY01&searchOrderField=NEW',
+    '티셀파': 'http://www.tsherpa.co.kr',
+  };
+
+  const [data, setData] = useState([
+    { id: 1, company: '아이스크림', no: 1, title: '이어령의 생활 속 인문학', credits: 2, hours: 30, minutes: 1800, category: '자기계발', openDate: '2023.08', removed: '', remarks: '인기 강좌' },
+    { id: 2, company: '티처빌', no: 1, title: 'AI 디지털 교과서 활용', credits: 1, hours: 15, minutes: 900, category: '에듀테크', openDate: '2023.09', removed: '', remarks: '' },
+    { id: 3, company: '비바샘', no: 1, title: '교실 속 연극 놀이', credits: 2, hours: 30, minutes: 1800, category: '교과지도', openDate: '2023.10', removed: '', remarks: '2학점 추천' },
+  ]);
+
+  const handleMenuClick = (company) => {
+    setSelectedCompany(company);
+    setCurrentView('company');
+    setIsMobileMenuOpen(false);
+  };
+
+  const handleDashboardClick = () => {
+    setSelectedCompany('');
+    setCurrentView('dashboard');
+    setIsMobileMenuOpen(false);
+  };
+
+  // 요청사항: 삭제 시 한번 물어보기
+  const handleDelete = (id) => {
+    if (window.confirm("정말 이 데이터를 삭제하시겠습니까?")) {
+      setData(data.filter(item => item.id !== id));
+    }
+  };
+
+  const handleAddRow = () => {
+    const newRow = {
+      id: Date.now(),
+      company: selectedCompany,
+      no: '', title: '새 과정', credits: '', hours: '', minutes: '', category: '', certification: '',
+      openDate: new Date().toISOString().slice(0, 7).replace('-', '.'), removed: '', remarks: ''
+    };
+    setData([newRow, ...data]);
+  };
+
+  // 요청사항: 수정 기능 (데이터 업데이트)
+  const handleUpdateRow = (updatedItem) => {
+    setData(prev => prev.map(item => item.id === updatedItem.id ? updatedItem : item));
+  };
+
+  // --- CSV 파싱 및 업데이트(병합) 로직 ---
+  const handleFileUpload = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const rows = parseCSV(e.target.result);
+      
+      let startParsing = false;
+      let headerMap = {}; 
+      
+      const uploadedItems = [];
+
+      rows.forEach((cols) => {
+        if (!startParsing) {
+          const cleanCols = cols.map(c => c ? c.replace(/\s/g, '') : '');
+          if (cleanCols.includes('번호') && cleanCols.includes('과정명')) {
+            startParsing = true;
+            headerMap = {
+              no: cleanCols.indexOf('번호'),
+              title: cleanCols.indexOf('과정명'),
+              credits: cleanCols.indexOf('학점'),
+              hours: cleanCols.indexOf('시간'),
+              category: cleanCols.indexOf('연수분야'),
+              openDate: cleanCols.indexOf('신규오픈날짜'),
+              removed: cleanCols.indexOf('사라진과정'),
+              remarks: cleanCols.indexOf('특이사항'),
+            };
+          }
+          return;
+        }
+
+        if (startParsing) {
+          const title = cols[headerMap.title];
+          // 과정명이 있는 유효한 행만 처리
+          if (title && title.replace(/\s/g, '') !== '과정명') {
+            uploadedItems.push({
+              company: selectedCompany,
+              no: cols[headerMap.no] || '',
+              title: title.trim(),
+              credits: cols[headerMap.credits] || '',
+              hours: cols[headerMap.hours] || '',
+              category: cols[headerMap.category] || '',
+              openDate: cols[headerMap.openDate] || '',
+              removed: cols[headerMap.removed] || '',
+              remarks: cols[headerMap.remarks] || '',
+            });
+          }
+        }
+      });
+
+      if (uploadedItems.length > 0) {
+        setData(prevData => {
+            const currentCompanyData = prevData.filter(d => d.company === selectedCompany);
+            const otherCompanyData = prevData.filter(d => d.company !== selectedCompany);
+            const dataMap = new Map();
+            currentCompanyData.forEach(item => {
+                const key = item.title.replace(/\s/g, '');
+                dataMap.set(key, item);
+            });
+
+            uploadedItems.forEach(newItem => {
+                const key = newItem.title.replace(/\s/g, '');
+                if (dataMap.has(key)) {
+                    const existingItem = dataMap.get(key);
+                    const mergedItem = {
+                        ...existingItem,
+                        no: newItem.no || existingItem.no,
+                        credits: newItem.credits || existingItem.credits,
+                        hours: newItem.hours || existingItem.hours,
+                        category: newItem.category || existingItem.category,
+                        openDate: newItem.openDate || existingItem.openDate,
+                        removed: newItem.removed || existingItem.removed,
+                        remarks: newItem.remarks || existingItem.remarks
+                    };
+                    dataMap.set(key, mergedItem);
+                } else {
+                    const newId = Date.now() + Math.random();
+                    dataMap.set(key, { ...newItem, id: newId });
+                }
+            });
+
+            return [...otherCompanyData, ...Array.from(dataMap.values())];
+        });
+        alert(`처리 완료! ${uploadedItems.length}건을 확인했습니다.`);
+      } else {
+        alert('데이터 인식 실패. 인코딩이나 헤더를 확인하세요.');
+      }
+    };
+    reader.readAsText(file, encoding);
+  };
+
+  const [importText, setImportText] = useState('');
+  const [detectedNewCourses, setDetectedNewCourses] = useState([]);
+  const [analysisResult, setAnalysisResult] = useState(null);
+  
+  const analyzeImportText = () => {
+    if (!importText.trim()) return;
+    const lines = importText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    const existing = new Set(data.filter(d => d.company === selectedCompany).map(d => d.title.replace(/\s+/g, '')));
+    
+    const candidates = [];
+    const duplicates = [];
+    let ignored = 0;
+
+    lines.forEach(line => {
+      if (line.length <= 2 || /\d+원/.test(line) || /^\d+(차시|학점)$/.test(line) || ['미리보기','수강신청'].some(k=>line.includes(k))) {
+        ignored++;
+        return;
+      }
+      if (existing.has(line.replace(/\s+/g, ''))) duplicates.push(line);
+      else candidates.push(line);
+    });
+
+    const unique = [...new Set(candidates)];
+    setDetectedNewCourses(unique.map(t => ({ title: t, checked: true })));
+    setAnalysisResult({ total: lines.length, new: unique.length, dup: duplicates.length, ignored });
+  };
+
+  const handleAddDetected = () => {
+    const toAdd = detectedNewCourses.filter(c => c.checked);
+    const newRows = toAdd.map(item => ({
+      id: Date.now() + Math.random(),
+      company: selectedCompany,
+      no: '', title: item.title, credits: '', hours: '', category: '미분류',
+      openDate: new Date().toISOString().slice(0, 7).replace('-', '.'), removed: '', remarks: '웹 추출'
+    }));
+    setData(prev => [...prev, ...newRows]);
+    setShowImportModal(false);
+    setImportText('');
+    setDetectedNewCourses([]);
+    setAnalysisResult(null);
+    alert(`${toAdd.length}건 등록 완료!`);
+  };
+
+  return (
+    <div className="flex min-h-screen bg-slate-50 font-sans text-slate-900">
+      
+      <aside className="hidden md:flex w-64 flex-col bg-slate-900 text-slate-300 shadow-xl z-20 sticky top-0 h-screen">
+        <div className="p-6 border-b border-slate-700 flex items-center gap-3">
+          <div className="bg-indigo-600 p-2 rounded-lg text-white">
+            <LayoutDashboard size={20} />
+          </div>
+          <h1 className="text-lg font-bold text-white leading-tight">콘텐츠<br/>현황 관리</h1>
+        </div>
+        
+        <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+          <button 
+            onClick={handleDashboardClick}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${currentView === 'dashboard' ? 'bg-indigo-600 text-white font-bold shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}
+          >
+            <Home size={18} />
+            <span>메인 대시보드</span>
+          </button>
+
+          <div className="pt-4 pb-2 text-xs font-bold text-slate-500 px-4 uppercase tracking-wider">
+            경쟁사 목록
+          </div>
+          
+          {companies.map(company => (
+            <button
+              key={company}
+              onClick={() => handleMenuClick(company)}
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-lg transition-all ${
+                selectedCompany === company 
+                  ? 'bg-slate-800 text-white font-medium border-l-4 border-indigo-500' 
+                  : 'hover:bg-slate-800 hover:text-white'
+              }`}
+            >
+              <span>{company}</span>
+              {selectedCompany === company && <div className="w-1.5 h-1.5 rounded-full bg-indigo-400"></div>}
+            </button>
+          ))}
+        </nav>
+
+        <div className="p-4 border-t border-slate-800 text-xs text-slate-500 text-center">
+          © 2024 Contents Manager
+        </div>
+      </aside>
+
+      <div className="flex-1 flex flex-col min-w-0">
+        
+        <header className="md:hidden bg-slate-900 text-white p-4 flex justify-between items-center shadow-md sticky top-0 z-30">
+          <div className="flex items-center gap-2 font-bold">
+            <LayoutDashboard size={20} /> 콘텐츠 현황 관리
+          </div>
+          <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>
+            <Menu size={24} />
+          </button>
+        </header>
+
+        {isMobileMenuOpen && (
+          <div className="md:hidden bg-slate-800 text-slate-300 p-4 absolute top-14 left-0 right-0 z-20 shadow-xl border-t border-slate-700">
+            <button onClick={handleDashboardClick} className="block w-full text-left py-3 px-2 hover:text-white border-b border-slate-700 font-bold">
+              메인 대시보드
+            </button>
+            {companies.map(c => (
+              <button key={c} onClick={() => handleMenuClick(c)} className="block w-full text-left py-3 px-2 hover:text-white border-b border-slate-700">
+                {c}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <main className="flex-1 p-4 md:p-8 max-w-7xl mx-auto w-full">
+          {currentView === 'dashboard' ? (
+            <MainDashboard data={data} companies={companies} onCompanyClick={handleMenuClick} />
+          ) : (
+            <CompanyDetail 
+              company={selectedCompany} 
+              data={data} 
+              setData={setData}
+              companyUrl={companyUrls[selectedCompany]}
+              onAddRow={handleAddRow}
+              onDeleteRow={handleDelete}
+              onUpdateRow={handleUpdateRow}
+              onFileUpload={handleFileUpload}
+              onWebImport={() => setShowImportModal(true)}
+            />
+          )}
+        </main>
+      </div>
+
+      {showImportModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col">
+            <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-xl">
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <ExternalLink size={20} className="text-indigo-600" />
+                웹사이트 신규 과정 추출 ({selectedCompany})
+              </h3>
+              <button onClick={() => setShowImportModal(false)} className="text-slate-400 hover:text-slate-600">
+                <X size={24} />
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-6 overflow-y-auto flex-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                 <div className="space-y-2">
+                   <p className="text-xs font-bold text-slate-500">STEP 1. 사이트 접속</p>
+                   {companyUrls[selectedCompany] ? (
+                     <a href={companyUrls[selectedCompany]} target="_blank" rel="noopener noreferrer" className="block w-full text-center py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-bold transition-colors">
+                       사이트 열기 <ExternalLink size={14} className="inline"/>
+                     </a>
+                   ) : <div className="py-2.5 bg-slate-50 text-slate-400 text-center text-sm rounded-lg">URL 없음</div>}
+                 </div>
+                 <div className="space-y-2">
+                   <p className="text-xs font-bold text-slate-500">STEP 2. 복사 후 붙여넣기</p>
+                   <button onClick={analyzeImportText} className="w-full py-2.5 bg-slate-800 hover:bg-black text-white rounded-lg text-sm font-bold transition-colors">분석하기</button>
+                 </div>
+              </div>
+
+              <textarea 
+                className="w-full h-32 p-3 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 resize-none"
+                placeholder="사이트에서 과정명 목록을 드래그 복사(Ctrl+C) 후 여기에 붙여넣기(Ctrl+V) 하세요..."
+                value={importText}
+                onChange={(e) => setImportText(e.target.value)}
+              />
+
+              {analysisResult && (
+                <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-3 animate-fadeIn">
+                   <div className="flex gap-4 text-xs text-slate-500 border-b border-slate-200 pb-2 mb-2">
+                     <span>총 {analysisResult.total}줄</span>
+                     <span className="text-amber-600">중복 {analysisResult.dup}건</span>
+                     <span className="text-slate-400">제외 {analysisResult.ignored}건</span>
+                   </div>
+                   {detectedNewCourses.length > 0 ? (
+                     <div className="max-h-40 overflow-y-auto space-y-1 pr-1">
+                       {detectedNewCourses.map((c, idx) => (
+                         <label key={idx} className="flex items-center gap-2 p-2 hover:bg-white rounded cursor-pointer border border-transparent hover:border-slate-200 transition-all">
+                           <input type="checkbox" checked={c.checked} onChange={(e) => {
+                             const up = [...detectedNewCourses]; up[idx].checked = e.target.checked; setDetectedNewCourses(up);
+                           }} className="rounded text-indigo-600"/>
+                           <span className="text-sm font-medium text-slate-700">{c.title}</span>
+                           <span className="ml-auto text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-bold">New</span>
+                         </label>
+                       ))}
+                     </div>
+                   ) : <div className="text-center text-sm text-slate-400 py-4">신규 과정이 없습니다.</div>}
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-slate-100 bg-slate-50 rounded-b-xl flex justify-end gap-2">
+              <button onClick={() => setShowImportModal(false)} className="px-4 py-2 text-slate-500 hover:bg-slate-200 rounded-lg text-sm font-bold">취소</button>
+              <button onClick={handleAddDetected} disabled={detectedNewCourses.filter(c=>c.checked).length===0} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-indigo-200">
+                {detectedNewCourses.filter(c=>c.checked).length}개 등록하기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
