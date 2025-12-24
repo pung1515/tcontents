@@ -3,9 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>콘텐츠 현황 관리 (Google Sheet)</title>
+    <title>콘텐츠 현황 관리 (통합)</title>
     
-    <script>window.process = { env: { NODE_ENV: 'production' } };</script>
+    <!-- 1. 환경 변수 폴리필 -->
+    <script>
+        window.process = { env: { NODE_ENV: 'production' } };
+    </script>
+
+    <!-- 2. 라이브러리 로드 -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" crossorigin="anonymous"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" crossorigin="anonymous"></script>
@@ -35,7 +40,7 @@
         const RechartsObj = window.Recharts;
         const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList } = RechartsObj || {};
 
-        // 사용자가 제공한 Google Apps Script URL (기본값)
+        // ★ 구글 시트 웹 앱 URL (기본값) ★
         const DEFAULT_SHEET_URL = "https://script.google.com/macros/s/AKfycbzjD7U46nMHIoKjD4rm5RuuNIkDUdMlRSdAR-pS_eHSoreqQ49qf079jm2GP5GlpoIGfw/exec";
 
         // --- 아이콘 컴포넌트 ---
@@ -59,21 +64,27 @@
                 Settings: <><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></>,
                 Sheet: <><path d="M3 3h18v18H3z"/><path d="M21 9H3"/><path d="M21 15H3"/><path d="M12 3v18"/></>,
                 Refresh: <><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></>,
-                Check: <><polyline points="20 6 9 17 4 12"/></>,
-                LinkOff: <><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></>
+                Info: <><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="16" y2="12"/><line x1="12" x2="12.01" y1="8" y2="8"/></>
             };
             return <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`icon ${className}`}>{icons[name] || null}</svg>;
         };
 
+        // --- CSV 파서 ---
         const parseCSV = (text) => { const rows = []; let currentRow = []; let currentCell = ''; let inQuotes = false; if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1); for (let i = 0; i < text.length; i++) { const char = text[i]; const nextChar = text[i + 1]; if (inQuotes) { if (char === '"' && nextChar === '"') { currentCell += '"'; i++; } else if (char === '"') { inQuotes = false; } else { currentCell += char; } } else { if (char === '"') { inQuotes = true; } else if (char === ',') { currentRow.push(currentCell.trim()); currentCell = ''; } else if (char === '\n' || char === '\r') { if (char === '\r' && nextChar === '\n') i++; currentRow.push(currentCell.trim()); if (currentRow.length > 0 && currentRow.some(c => c !== '')) rows.push(currentRow); currentRow = []; currentCell = ''; } else { currentCell += char; } } } if (currentCell || currentRow.length > 0) { currentRow.push(currentCell.trim()); if (currentRow.length > 0 && currentRow.some(c => c !== '')) rows.push(currentRow); } return rows; };
 
+        // --- 번호 재정렬 함수 ---
         const renumberCompanyData = (allData, companyName) => {
             const otherData = allData.filter(d => d.company !== companyName);
             const targetData = allData.filter(d => d.company === companyName);
+            
+            // 번호 재정렬 (판매 중지된 항목은 번호 제거, 나머지는 1부터 순차 부여)
             let counter = 1;
             const updatedTargetData = targetData.map(item => {
-                if (item.removed) return { ...item, no: '' };
-                else return { ...item, no: String(counter++) };
+                if (item.removed) {
+                    return { ...item, no: '' }; // 판매 중지 시 번호 공란
+                } else {
+                    return { ...item, no: String(counter++) }; // 순차 번호 부여
+                }
             });
             return [...otherData, ...updatedTargetData];
         };
@@ -90,20 +101,28 @@
                             <h3 className="font-bold text-lg flex items-center gap-2"><Icon name="Sheet" className="text-green-600"/> 구글 시트 연동 설정</h3>
                             <button onClick={onClose}><Icon name="X"/></button>
                         </div>
-                        <div className="text-sm text-slate-600 space-y-2">
-                            <p>1. 구글 시트의 <strong>[Apps Script]</strong> 코드를 저장하세요.</p>
-                            <p>2. <strong>[배포] &gt; [웹 앱]</strong> 권한을 반드시 <span className="text-red-600 font-bold">'모든 사용자(Everyone)'</span>로 설정해야 합니다.</p>
-                            <p>3. 생성된 웹 앱 URL을 아래에 입력하세요.</p>
+                        <div className="text-sm text-slate-600 space-y-2 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                            <div className="flex items-start gap-2">
+                                <Icon name="Info" size={16} className="text-blue-500 mt-0.5 shrink-0"/>
+                                <div>
+                                    <p className="font-bold text-slate-700">연동이 안 되시나요?</p>
+                                    <p className="text-xs text-slate-500 mt-1">1. 구글 시트에서 <strong>[배포] > [새 배포]</strong> 클릭<br/>2. 액세스 권한을 <strong>'모든 사용자 (Anyone)'</strong>로 설정<br/>3. (회사 계정은 보안상 안 될 수 있으니 <strong>개인 계정</strong> 사용)</p>
+                                </div>
+                            </div>
                         </div>
-                        <input type="text" className="w-full p-2 border rounded text-sm bg-slate-50" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://script.google.com/..." />
+                        <div className="space-y-1">
+                            <label className="text-xs font-bold text-slate-500">웹 앱 URL</label>
+                            <input type="text" className="w-full p-2 border rounded text-sm bg-white" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://script.google.com/..." />
+                        </div>
                         <div className="flex justify-end gap-2 pt-2">
-                            <button onClick={() => onSync(url)} className="px-4 py-2 bg-green-600 text-white rounded text-sm font-bold hover:bg-green-700 flex items-center gap-2"><Icon name="Refresh" size={16}/> 연동 및 동기화</button>
+                            <button onClick={() => onSync(url)} className="px-4 py-2 bg-green-600 text-white rounded text-sm font-bold hover:bg-green-700 flex items-center gap-2"><Icon name="Refresh" size={16}/> 설정 저장 및 동기화</button>
                         </div>
                     </div>
                 </div>
             );
         };
 
+        // --- 수정 모달 (화면 중앙 고정) ---
         const EditModal = ({ isOpen, onClose, item, onSave }) => {
             const [formData, setFormData] = useState(item || {});
             useEffect(() => { setFormData(item || {}); }, [item]);
@@ -184,7 +203,7 @@
                                     <table className="w-full text-sm text-left text-slate-600">
                                         <thead className="bg-slate-100 text-xs"><tr><th className="px-4 py-3">번호</th><th className="px-4 py-3">과정명</th><th className="px-4 py-3">상태</th><th className="px-4 py-3 text-center">관리</th></tr></thead>
                                         <tbody className="divide-y">{results[company].map(row => (
-                                            <tr key={row.id} className="hover:bg-slate-50"><td className="px-4 py-3">{row.no}</td><td className="px-4 py-3">{row.title}</td><td className="px-4 py-3">{row.removed ? '삭제됨':'운영중'}</td>
+                                            <tr key={row.id} className="hover:bg-slate-50"><td className="px-4 py-3">{row.no}</td><td className="px-4 py-3">{row.title}</td><td className="px-4 py-3">{row.removed ? <span className="text-red-500 font-bold">삭제됨</span>:<span className="text-emerald-600 font-bold">운영중</span>}</td>
                                             <td className="px-4 py-3 text-center flex justify-center gap-1"><button onClick={() => setEditingItem(row)} className="text-slate-400 hover:text-indigo-600 p-1"><Icon name="Edit" size={16}/></button><button onClick={() => onDeleteRow(row.id)} className="text-slate-400 hover:text-red-600 p-1"><Icon name="Trash2" size={16}/></button></td></tr>
                                         ))}</tbody></table>
                                 </div>
@@ -282,9 +301,10 @@
             const [showImportModal, setShowImportModal] = useState(false);
             const [importText, setImportText] = useState('');
             const [detectedNewCourses, setDetectedNewCourses] = useState([]);
+            const [analysisResult, setAnalysisResult] = useState(null); // Define State
             const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
             const [loading, setLoading] = useState(false);
-            const [syncError, setSyncError] = useState(false); // 연동 상태 에러 플래그
+            const [syncError, setSyncError] = useState(false);
 
             const companies = ['비바샘', '티처빌', '아이스크림', '티셀파', '한교원', '사제동행', '창비'];
             const companyUrls = {
@@ -307,23 +327,14 @@
 
             useEffect(() => { localStorage.setItem('courseData', JSON.stringify(data)); }, [data]);
 
-            // 구글 시트 읽기 (에러 핸들링 강화 & 캐시 방지)
             const fetchFromSheet = async (url) => {
                 setLoading(true);
                 setSyncError(false);
                 try {
-                    // 1. URL에 타임스탬프 추가하여 캐시 문제 방지
                     const targetUrl = url.includes('?') ? `${url}&action=read` : `${url}?action=read`;
                     const cacheBuster = `&t=${new Date().getTime()}`;
-                    
-                    const res = await fetch(targetUrl + cacheBuster, { 
-                        method: 'GET',
-                        redirect: 'follow',
-                        credentials: 'omit' // 인증 정보 제외 (공개 스크립트 접근 시 권장)
-                    });
-                    
+                    const res = await fetch(targetUrl + cacheBuster, { method: 'GET', redirect: 'follow' });
                     if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-                    
                     const json = await res.json();
                     if (Array.isArray(json)) {
                         const formatted = json.map(item => ({ ...item, id: item.id || Date.now() + Math.random() }));
@@ -332,11 +343,9 @@
                 } catch (e) {
                     console.error("Sheet Load Failed:", e);
                     setSyncError(true);
-                    // 사용자에게 알림은 syncError 상태를 통해 UI로 표시됨
                 } finally { setLoading(false); }
             };
 
-            // 구글 시트 쓰기
             const saveToSheet = async (url, newData) => {
                 setLoading(true);
                 setSyncError(false);
@@ -344,7 +353,9 @@
                     await fetch(url + '?action=sync', {
                         method: 'POST',
                         mode: 'no-cors',
-                        headers: { 'Content-Type': 'text/plain' }, // application/json 대신 text/plain 시도 (CORS 회피용)
+                        cache: 'no-cache',
+                        redirect: 'follow',
+                        headers: { 'Content-Type': 'text/plain' },
                         body: JSON.stringify(newData)
                     });
                 } catch (e) {
@@ -460,6 +471,14 @@
                 alert("추가 완료!");
             };
 
+            // 모달 열기 핸들러 (상태 초기화)
+            const handleOpenWebImport = () => {
+                setImportText('');
+                setDetectedNewCourses([]);
+                setAnalysisResult(null);
+                setShowImportModal(true);
+            };
+
             return (
                 <div className="flex min-h-screen bg-slate-50 font-sans text-slate-900">
                     <aside className="hidden md:flex w-64 flex-col bg-slate-900 text-slate-300 shadow-xl z-20 sticky top-0 h-screen">
@@ -492,19 +511,22 @@
                         <main className="p-8">
                             {searchTerm ? <SearchResults data={data} searchTerm={searchTerm} companies={companies} onDeleteRow={handleDelete} onUpdateRow={handleUpdateRow}/> : 
                              currentView === 'dashboard' ? <MainDashboard data={data} companies={companies} onCompanyClick={(c) => {setSelectedCompany(c); setCurrentView('company');}}/> : 
-                             <CompanyDetail company={selectedCompany} data={data} setData={setData} onAddRow={handleAddRow} onDeleteRow={handleDelete} onUpdateRow={handleUpdateRow} onFileUpload={handleFileUpload} onWebImport={() => {
-                                 // 모달 열 때 상태 초기화
-                                 setImportText('');
-                                 setDetectedNewCourses([]);
-                                 setAnalysisResult(null);
-                                 setShowImportModal(true);
-                             }}/>}
+                             <CompanyDetail 
+                                company={selectedCompany} 
+                                data={data} 
+                                setData={setData} 
+                                onAddRow={handleAddRow} 
+                                onDeleteRow={handleDelete} 
+                                onUpdateRow={handleUpdateRow} 
+                                onFileUpload={handleFileUpload} 
+                                onWebImport={handleOpenWebImport} // Use named handler
+                             />}
                         </main>
                     </div>
                     {/* 모달들 */}
                     <GoogleSheetModal isOpen={showSheetModal} onClose={() => setShowSheetModal(false)} sheetUrl={sheetUrl} onSync={handleSheetSync} />
                     {showImportModal && (
-                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+                        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
                             <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl p-6 space-y-4">
                                 <h3 className="font-bold text-lg flex gap-2"><Icon name="ExternalLink"/> 웹사이트 신규 과정 추출 ({selectedCompany})</h3>
                                 <div className="grid grid-cols-2 gap-4 text-sm">
